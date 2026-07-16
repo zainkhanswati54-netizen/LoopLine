@@ -9,13 +9,33 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 ## What's in this scaffold
 
 - `MainActivity.kt` — entry point, hosts the Compose nav graph
-- `ui/navigation/LoopLineNavGraph.kt` — Splash → Home routing
+- `ui/navigation/LoopLineNavGraph.kt` — Splash → Home → Level Select → Game routing
 - `ui/screens/SplashScreen.kt` — animated logo + loading dots, auto-advances
-- `ui/screens/HomeScreen.kt` — mode grid (Classic / Daily / Timed / Zen), all "Coming soon"
+- `ui/screens/HomeScreen.kt` — mode grid (Classic is playable, Daily/Timed/Zen are "Coming soon"), Settings icon (Coming soon)
+- `ui/screens/LevelSelectScreen.kt` — numbered level grid, color-coded per level
+- `ui/screens/GameScreen.kt` — the actual Classic mode puzzle: drag to connect every tile in one continuous stroke
+- `game/Level.kt`, `game/LevelRepository.kt` — pure Kotlin puzzle model, 3 handcrafted levels (each verified solvable by a backtracking search before being added)
 - `ui/components/LoopLineLogo.kt` — the app mark, drawn in code (Canvas), no image asset
 - `ui/components/ModeCard.kt`, `ComingSoonDialog.kt` — reusable UI pieces
 - `ui/theme/` — Color.kt, Type.kt, Theme.kt — dark navy palette + typography scale
 - `res/drawable/ic_launcher_*.xml` — adaptive app icon (same mark as the in-app logo)
+
+## Classic mode — how it plays
+
+- Drag from the colored start dot through adjacent tiles (no diagonals).
+- Every tile must be visited exactly once, in one continuous stroke.
+- Touching the previous tile again undoes one step; touching the start dot resets the level.
+- The header shows a live `filled / total` tile counter.
+- Completing a level shows a dialog with **Next level** or **Level select**.
+- 3 levels ship for now — add more in `game/LevelRepository.kt` (see note below).
+
+### Adding a new level
+
+Each level is just a set of `Cell(row, col)` coordinates plus a `start` cell.
+Before adding one, verify it's actually solvable — a shape can look fine and
+still have no valid single-stroke path. A short backtracking search does
+this in milliseconds; ask and I'll verify + generate the Kotlin for any
+shape you sketch out.
 
 ## Color palette
 

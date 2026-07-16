@@ -16,3 +16,11 @@ val AccentGreen = Color(0xFF4CAF50)
 
 val TextPrimary = Color(0xFFFFFFFF)
 val TextSecondary = Color(0xFFA0A0B8)
+
+/** Maps a Level's accentKey (plain string, kept Compose-free in the game model) to a Color. */
+fun accentColorFor(key: String): Color = when (key) {
+    "blue" -> AccentBlue
+    "orange" -> AccentOrange
+    "green" -> AccentGreen
+    else -> AccentBlue
+}

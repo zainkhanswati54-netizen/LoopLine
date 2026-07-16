@@ -20,7 +20,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.SelfImprovement
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,18 +50,19 @@ data class GameMode(
     val title: String,
     val description: String,
     val icon: ImageVector,
-    val accent: Color
+    val accent: Color,
+    val available: Boolean = false
 )
 
 private val modes = listOf(
-    GameMode("Classic", "Connect every tile in one stroke", Icons.Filled.GridOn, AccentBlue),
+    GameMode("Classic", "Connect every tile in one stroke", Icons.Filled.GridOn, AccentBlue, available = true),
     GameMode("Daily Puzzle", "A fresh challenge every day", Icons.Filled.CalendarToday, AccentOrange),
     GameMode("Timed", "Beat the clock", Icons.Filled.Timer, AccentGreen),
     GameMode("Zen", "No timer, no pressure", Icons.Filled.SelfImprovement, AccentBlue),
 )
 
 @Composable
-fun HomeScreen() {
+fun HomeScreen(onPlayClassic: () -> Unit) {
     var showComingSoon by remember { mutableStateOf(false) }
 
     Box(
@@ -72,12 +76,12 @@ fun HomeScreen() {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
+                    .padding(start = 24.dp, end = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 LoopLineLogo(modifier = Modifier.size(52.dp))
                 Spacer(modifier = Modifier.width(14.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "LoopLine",
                         style = MaterialTheme.typography.headlineMedium,
@@ -88,6 +92,9 @@ fun HomeScreen() {
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary
                     )
+                }
+                IconButton(onClick = { showComingSoon = true }) {
+                    Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = TextSecondary)
                 }
             }
 
@@ -114,7 +121,11 @@ fun HomeScreen() {
                         description = mode.description,
                         icon = mode.icon,
                         accent = mode.accent,
-                        onClick = { showComingSoon = true }
+                        badgeText = if (mode.available) "Play" else "Coming soon",
+                        badgeHighlighted = mode.available,
+                        onClick = {
+                            if (mode.available) onPlayClassic() else showComingSoon = true
+                        }
                     )
                 }
             }

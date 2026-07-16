@@ -29,7 +29,9 @@ fun ModeCard(
     description: String,
     icon: ImageVector,
     accent: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    badgeText: String = "Coming soon",
+    badgeHighlighted: Boolean = false
 ) {
     Column(
         modifier = Modifier
@@ -65,13 +67,13 @@ fun ModeCard(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(50))
-                .background(Color.White.copy(alpha = 0.08f))
+                .background(if (badgeHighlighted) accent.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.08f))
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
             Text(
-                text = "Coming soon",
+                text = badgeText,
                 style = MaterialTheme.typography.labelLarge,
-                color = TextSecondary
+                color = if (badgeHighlighted) accent else TextSecondary
             )
         }
     }
