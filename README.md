@@ -54,6 +54,26 @@ git remote add origin https://github.com/<your-username>/<your-repo>.git
 git push -u origin main
 ```
 
+## Building an APK via GitHub (no Android Studio needed)
+
+This repo includes a GitHub Actions workflow (`.github/workflows/build-apk.yml`)
+that builds a debug APK automatically.
+
+1. Push the repo to GitHub (see steps above).
+2. Go to your repo on GitHub → **Actions** tab. The workflow runs
+   automatically on every push to `main` (or trigger it manually: Actions →
+   **Build APK** → **Run workflow**).
+3. Once the run finishes (green check), open it → scroll to
+   **Artifacts** → download **LoopLine-debug-apk** (a zip containing the `.apk`).
+4. Unzip it, copy the `.apk` to your phone, and install it. You'll need to
+   allow "install from unknown sources" for whichever app you use to open it
+   — this is a normal debug build, self-signed by the Android build tools,
+   not a Play Store release.
+
+This debug APK is fine for testing on your own device. For a real release
+(Play Store or sharing widely) you'd eventually want a signed release build
+with your own keystore — ask when you're ready to set that up.
+
 ## Suggested next steps
 
 - Build the `Classic` mode board (grid state, path-drawing gesture, win check)
