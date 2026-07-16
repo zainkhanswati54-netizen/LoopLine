@@ -6,15 +6,16 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.loopline.puzzle.game.GameSession
+import com.loopline.puzzle.ui.screens.DifficultySelectScreen
 import com.loopline.puzzle.ui.screens.GameScreen
 import com.loopline.puzzle.ui.screens.HomeScreen
-import com.loopline.puzzle.ui.screens.LevelSelectScreen
 import com.loopline.puzzle.ui.screens.SplashScreen
 
 object Routes {
     const val SPLASH = "splash"
     const val HOME = "home"
-    const val LEVEL_SELECT = "level_select"
+    const val DIFFICULTY_SELECT = "difficulty_select"
     const val GAME = "game/{levelId}"
 
     fun game(levelId: Int) = "game/$levelId"
@@ -37,14 +38,17 @@ fun LoopLineNavGraph() {
 
         composable(Routes.HOME) {
             HomeScreen(
-                onPlayClassic = { navController.navigate(Routes.LEVEL_SELECT) }
+                onPlayClassic = { navController.navigate(Routes.DIFFICULTY_SELECT) }
             )
         }
 
-        composable(Routes.LEVEL_SELECT) {
-            LevelSelectScreen(
+        composable(Routes.DIFFICULTY_SELECT) {
+            DifficultySelectScreen(
                 onBack = { navController.popBackStack() },
-                onLevelSelected = { levelId -> navController.navigate(Routes.game(levelId)) }
+                onDifficultySelected = { difficulty ->
+                    val level = GameSession.start(difficulty)
+                    navController.navigate(Routes.game(level.id))
+                }
             )
         }
 
@@ -56,15 +60,12 @@ fun LoopLineNavGraph() {
             GameScreen(
                 levelId = levelId,
                 onBack = {
-                    navController.popBackStack(Routes.LEVEL_SELECT, inclusive = false)
+                    navController.popBackStack(Routes.DIFFICULTY_SELECT, inclusive = false)
                 },
-                onNextLevel = { nextId ->
-                    navController.navigate(Routes.game(nextId)) {
-                        popUpTo(Routes.LEVEL_SELECT) { inclusive = false }
+                onNavigateToLevel = { newId ->
+                    navController.navigate(Routes.game(newId)) {
+                        popUpTo(Routes.DIFFICULTY_SELECT) { inclusive = false }
                     }
-                },
-                onNoMoreLevels = {
-                    navController.popBackStack(Routes.LEVEL_SELECT, inclusive = false)
                 }
             )
         }

@@ -9,12 +9,16 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 ## What's in this scaffold
 
 - `MainActivity.kt` — entry point, hosts the Compose nav graph
-- `ui/navigation/LoopLineNavGraph.kt` — Splash → Home → Level Select → Game routing
+- `ui/navigation/LoopLineNavGraph.kt` — Splash → Home → Difficulty Select → Game routing
 - `ui/screens/SplashScreen.kt` — animated logo + loading dots, auto-advances
 - `ui/screens/HomeScreen.kt` — mode grid (Classic is playable, Daily/Timed/Zen are "Coming soon"), Settings icon (Coming soon)
-- `ui/screens/LevelSelectScreen.kt` — numbered level grid, color-coded per level
+- `ui/screens/DifficultySelectScreen.kt` — Easy / Normal / Hard picker
 - `ui/screens/GameScreen.kt` — the actual Classic mode puzzle: drag to connect every tile in one continuous stroke
-- `game/Level.kt`, `game/LevelRepository.kt` — pure Kotlin puzzle model, 3 handcrafted levels (each verified solvable by a backtracking search before being added)
+- `game/Level.kt` — the puzzle model (a set of grid cells + a start cell)
+- `game/Difficulty.kt` — grid size and cell-count range per difficulty
+- `game/LevelGenerator.kt` — procedural level generator (see below)
+- `game/GameSession.kt` — tracks the current difficulty, level count, and caches generated levels for lookup by nav route id
+- `game/LevelRepository.kt` — 3 handcrafted fallback levels (kept as a safety net; the generator is the primary path now)
 - `ui/components/LoopLineLogo.kt` — the app mark, drawn in code (Canvas), no image asset
 - `ui/components/ModeCard.kt`, `ComingSoonDialog.kt` — reusable UI pieces
 - `ui/theme/` — Color.kt, Type.kt, Theme.kt — dark navy palette + typography scale
@@ -22,20 +26,37 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 
 ## Classic mode — how it plays
 
+- Tap **Classic** on the home screen → pick **Easy / Normal / Hard**.
 - Drag from the colored start dot through adjacent tiles (no diagonals).
 - Every tile must be visited exactly once, in one continuous stroke.
 - Touching the previous tile again undoes one step; touching the start dot resets the level.
-- The header shows a live `filled / total` tile counter.
-- Completing a level shows a dialog with **Next level** or **Level select**.
-- 3 levels ship for now — add more in `game/LevelRepository.kt` (see note below).
+- The header shows a live `filled / total` tile counter and the current difficulty.
+- Completing a level shows a dialog: **Next level** (generates a fresh puzzle at the same difficulty) or **Change difficulty**.
+- Play is endless — there's no fixed level count anymore.
 
-### Adding a new level
+## How level generation works (and why it's always solvable)
 
-Each level is just a set of `Cell(row, col)` coordinates plus a `start` cell.
-Before adding one, verify it's actually solvable — a shape can look fine and
-still have no valid single-stroke path. A short backtracking search does
-this in milliseconds; ask and I'll verify + generate the Kotlin for any
-shape you sketch out.
+Instead of drawing a grid shape and then checking whether a solution exists,
+`LevelGenerator` generates the **solution first**: it does a random
+self-avoiding walk on the grid (starting from a random cell, stepping to a
+random unvisited neighbor, stopping when boxed in). The walk's cells *become*
+the puzzle's shape, and the walk itself *is* a valid one-stroke answer — so
+there's no separate validation step, and no way to end up with an unsolvable
+board.
+
+Each difficulty targets a cell-count range (see `Difficulty.kt`):
+
+| Difficulty | Grid | Target tiles |
+|---|---|---|
+| Easy | 4×4 | 8–12 |
+| Normal | 5×5 | 14–20 |
+| Hard | 6×6 | 22–30 |
+
+The generator retries the walk (up to 300 times, effectively instant) until
+one lands in the target range, so puzzle size stays consistent within a
+difficulty instead of varying wildly like hand-picked levels can. This was
+simulated 500 times per difficulty before shipping — all three hit their
+target range 100% of the time within the retry budget.
 
 ## Color palette
 

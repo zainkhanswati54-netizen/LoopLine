@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
@@ -38,6 +39,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.loopline.puzzle.game.Cell
+import com.loopline.puzzle.game.GameSession
 import com.loopline.puzzle.game.LevelRepository
 import com.loopline.puzzle.ui.theme.AccentBlue
 import com.loopline.puzzle.ui.theme.BackgroundDark
@@ -54,13 +56,14 @@ private val CELL_GAP = 10.dp
 fun GameScreen(
     levelId: Int,
     onBack: () -> Unit,
-    onNextLevel: (Int) -> Unit,
-    onNoMoreLevels: () -> Unit
+    onNavigateToLevel: (Int) -> Unit
 ) {
-    val level = remember(levelId) { LevelRepository.byId(levelId) }
+    // Generated levels live in GameSession's cache; the 3 handcrafted ones in
+    // LevelRepository are kept as a fallback so a stale/bookmarked id never
+    // shows a blank screen.
+    val level = remember(levelId) { GameSession.lookup(levelId) ?: LevelRepository.byId(levelId) }
 
     if (level == null) {
-        // Unknown level id - shouldn't normally happen, but fail safe.
         Box(
             modifier = Modifier.fillMaxSize().background(BackgroundDark),
             contentAlignment = Alignment.Center
@@ -92,14 +95,12 @@ fun GameScreen(
         val candidate = cellAt(offset) ?: return
 
         when {
-            candidate == path.last() -> Unit // finger sitting on current end, no-op
+            candidate == path.last() -> Unit
             candidate == level.start && path.size > 1 -> {
-                // Touching the start dot again resets the path - quick restart gesture.
                 path.clear()
                 path.add(level.start)
             }
             path.size >= 2 && candidate == path[path.size - 2] -> {
-                // Stepping back onto the previous cell undoes the last move.
                 path.removeAt(path.lastIndex)
             }
             candidate !in path && candidate.isAdjacentTo(path.last()) -> {
@@ -123,12 +124,18 @@ fun GameScreen(
             IconButton(onClick = onBack) {
                 Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
             }
-            Text(
-                text = level.title,
-                style = MaterialTheme.typography.headlineMedium,
-                color = TextPrimary,
-                modifier = Modifier.weight(1f)
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = level.title,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = TextPrimary
+                )
+                Text(
+                    text = GameSession.difficulty.label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
+            }
             IconButton(onClick = {
                 path.clear()
                 path.add(level.start)
@@ -163,7 +170,6 @@ fun GameScreen(
                         )
                     }
             ) {
-                // idle / filled tiles
                 level.cells.forEach { cell ->
                     val topLeft = Offset(cell.col * stridePx, cell.row * stridePx)
                     val inPath = cell in path
@@ -175,7 +181,6 @@ fun GameScreen(
                     )
                 }
 
-                // connecting stroke through the drawn path
                 if (path.size > 1) {
                     for (i in 0 until path.size - 1) {
                         val a = path[i]
@@ -192,7 +197,6 @@ fun GameScreen(
                     }
                 }
 
-                // start dot
                 val startCenter = Offset(
                     level.start.col * stridePx + cellPx / 2f,
                     level.start.row * stridePx + cellPx / 2f
@@ -206,8 +210,8 @@ fun GameScreen(
         LevelCompleteDialog(
             onLevelSelect = onBack,
             onNext = {
-                val nextId = LevelRepository.nextIdAfter(levelId)
-                if (nextId != null) onNextLevel(nextId) else onNoMoreLevels()
+                val nextLevel = GameSession.next()
+                onNavigateToLevel(nextLevel.id)
             }
         )
     }
@@ -230,7 +234,7 @@ private fun LevelCompleteDialog(onLevelSelect: () -> Unit, onNext: () -> Unit) {
         },
         dismissButton = {
             TextButton(onClick = onLevelSelect) {
-                Text("Level select", color = TextSecondary)
+                Text("Change difficulty", color = TextSecondary)
             }
         }
     )
