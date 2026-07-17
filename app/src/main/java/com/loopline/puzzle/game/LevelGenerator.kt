@@ -4,12 +4,13 @@ import kotlin.random.Random
 
 object LevelGenerator {
 
-    private val accentCycle = listOf("blue", "orange", "green")
     private val directions = listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)
 
     /**
-     * Generates a level for the given difficulty. The returned level's [Level.id]
-     * is a placeholder (0) - callers (GameSession) assign the real id.
+     * Generates a level from an explicit [GridConfig] (decoupled from
+     * [Difficulty] so callers can pass a progression-scaled config).
+     * The returned level's [Level.id] is a placeholder (0) - GameSession
+     * assigns the real id.
      *
      * How solvability is guaranteed: instead of drawing a shape first and then
      * checking whether it *has* a solution, we generate the solution path first
@@ -17,8 +18,7 @@ object LevelGenerator {
      * the level's shape. There's no separate validation step needed - the walk
      * that produced the shape is itself a valid one-stroke answer.
      */
-    fun generate(difficulty: Difficulty, levelNumber: Int, attempts: Int = 300): Level {
-        val config = difficulty.config
+    fun generate(config: GridConfig, levelNumber: Int, accentKey: String, attempts: Int = 300): Level {
         val rnd = Random(System.nanoTime() xor levelNumber.toLong())
 
         var best: List<Cell> = emptyList()
@@ -31,8 +31,8 @@ object LevelGenerator {
             if (path.size > best.size) best = path
         }
 
-        // Safety net: if 300 attempts never landed in range (rare on small grids),
-        // fall back to whatever the longest walk found was, as long as it's not trivial.
+        // Safety net: if attempts never landed in range (rare), fall back to
+        // whatever the longest walk found was, as long as it's not trivial.
         val finalPath = if (best.size >= 6) best else randomSelfAvoidingWalk(config.rows, config.cols, rnd)
 
         return Level(
@@ -42,7 +42,7 @@ object LevelGenerator {
             cols = config.cols,
             cells = finalPath.toSet(),
             start = finalPath.first(),
-            accentKey = accentCycle[(levelNumber - 1).mod(accentCycle.size)]
+            accentKey = accentKey
         )
     }
 

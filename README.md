@@ -12,13 +12,14 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 - `ui/navigation/LoopLineNavGraph.kt` — Splash → Home → Difficulty Select → Game routing
 - `ui/screens/SplashScreen.kt` — animated logo + loading dots, auto-advances
 - `ui/screens/HomeScreen.kt` — mode grid (Classic is playable, Daily/Timed/Zen are "Coming soon"), Settings icon (Coming soon)
-- `ui/screens/DifficultySelectScreen.kt` — Easy / Normal / Hard picker
-- `ui/screens/GameScreen.kt` — the actual Classic mode puzzle: drag to connect every tile in one continuous stroke
+- `ui/screens/DifficultySelectScreen.kt` — Easy / Normal / Hard picker, plus a "Continue" card when a session is in progress, plus your best level reached per difficulty
+- `ui/screens/GameScreen.kt` — the Classic mode puzzle: drag to connect every tile in one continuous stroke, with a responsive grid, timer, stars, haptics, and a confetti celebration
 - `game/Level.kt` — the puzzle model (a set of grid cells + a start cell)
-- `game/Difficulty.kt` — grid size and cell-count range per difficulty
+- `game/Difficulty.kt` — grid size/cell-count range per difficulty, plus progressive scaling for endless play
 - `game/LevelGenerator.kt` — procedural level generator (see below)
-- `game/GameSession.kt` — tracks the current difficulty, level count, and caches generated levels for lookup by nav route id
-- `game/LevelRepository.kt` — 3 handcrafted fallback levels (kept as a safety net; the generator is the primary path now)
+- `game/GameSession.kt` — tracks the current difficulty, level count, resumes an in-progress session instead of resetting it, caches generated levels for nav lookup
+- `game/ProgressStore.kt` — persists your best level reached per difficulty (SharedPreferences, survives app restarts)
+- `game/LevelRepository.kt` — 3 handcrafted fallback levels (safety net; the generator is the primary path)
 - `ui/components/LoopLineLogo.kt` — the app mark, drawn in code (Canvas), no image asset
 - `ui/components/ModeCard.kt`, `ComingSoonDialog.kt` — reusable UI pieces
 - `ui/theme/` — Color.kt, Type.kt, Theme.kt — dark navy palette + typography scale
@@ -26,13 +27,27 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 
 ## Classic mode — how it plays
 
-- Tap **Classic** on the home screen → pick **Easy / Normal / Hard**.
+- Tap **Classic** on the home screen → pick **Easy / Normal / Hard** (or **Continue** if you already have a session going).
 - Drag from the colored start dot through adjacent tiles (no diagonals).
 - Every tile must be visited exactly once, in one continuous stroke.
 - Touching the previous tile again undoes one step; touching the start dot resets the level.
-- The header shows a live `filled / total` tile counter and the current difficulty.
-- Completing a level shows a dialog: **Next level** (generates a fresh puzzle at the same difficulty) or **Change difficulty**.
-- Play is endless — there's no fixed level count anymore.
+- A short haptic tick confirms each tile you connect.
+- The header shows a live `filled / total` tile counter and elapsed time.
+- Completing a level plays a quick confetti burst, then a dialog with a **star rating** (based on solve time relative to puzzle size), **Next level** (fresh puzzle, same difficulty, slightly bigger every 5 levels), or **Change difficulty**.
+- Play is endless — no fixed level count.
+
+## Recent fixes (from testing feedback)
+
+- **Grid no longer overflows the screen on Hard.** Tile size is now computed
+  from the actual available screen width (`BoxWithConstraints`) instead of a
+  fixed 58dp, so a 6×6 (or bigger, once scaled) grid always fits — it just
+  uses smaller tiles on narrower screens instead of running off the edge.
+- **Progress no longer resets when you back out and come back.** Previously,
+  picking a difficulty always started over at Level 1, even mid-session.
+  `GameSession.start()` now resumes an in-progress session for the same
+  difficulty; the Difficulty Select screen also shows an explicit
+  **Continue** card so it's clear you have progress waiting. Explicitly
+  tapping a difficulty card still starts a fresh run, if that's what you want.
 
 ## How level generation works (and why it's always solvable)
 
@@ -44,19 +59,21 @@ the puzzle's shape, and the walk itself *is* a valid one-stroke answer — so
 there's no separate validation step, and no way to end up with an unsolvable
 board.
 
-Each difficulty targets a cell-count range (see `Difficulty.kt`):
+Each difficulty targets a cell-count range (see `Difficulty.kt`), and grows
+slightly every 5 levels cleared (endless-mode progression), capped so grids
+never get unreasonably large for a phone screen:
 
-| Difficulty | Grid | Target tiles |
+| Difficulty | Base grid | Base target tiles |
 |---|---|---|
 | Easy | 4×4 | 8–12 |
 | Normal | 5×5 | 14–20 |
 | Hard | 6×6 | 22–30 |
 
 The generator retries the walk (up to 300 times, effectively instant) until
-one lands in the target range, so puzzle size stays consistent within a
-difficulty instead of varying wildly like hand-picked levels can. This was
-simulated 500 times per difficulty before shipping — all three hit their
-target range 100% of the time within the retry budget.
+one lands in the target range. This was simulated hundreds of times per
+difficulty before shipping — every tier hits its target range 99.5–100% of
+the time within the retry budget, including scaled-up late-game grids that
+target near-full coverage.
 
 ## Color palette
 

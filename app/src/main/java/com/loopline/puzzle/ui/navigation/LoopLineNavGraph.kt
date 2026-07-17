@@ -45,8 +45,17 @@ fun LoopLineNavGraph() {
         composable(Routes.DIFFICULTY_SELECT) {
             DifficultySelectScreen(
                 onBack = { navController.popBackStack() },
+                onContinue = {
+                    val level = GameSession.currentLevel
+                    if (level != null) {
+                        navController.navigate(Routes.game(level.id))
+                    }
+                },
                 onDifficultySelected = { difficulty ->
-                    val level = GameSession.start(difficulty)
+                    // An explicit tap on a difficulty always starts a fresh
+                    // session at level 1, even if one was already active -
+                    // "Continue" above is the path that resumes progress.
+                    val level = GameSession.forceRestart(difficulty)
                     navController.navigate(Routes.game(level.id))
                 }
             )
