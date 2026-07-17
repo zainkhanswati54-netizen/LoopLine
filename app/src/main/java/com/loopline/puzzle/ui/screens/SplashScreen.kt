@@ -16,7 +16,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,9 +30,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.loopline.puzzle.ui.components.GradientText
 import com.loopline.puzzle.ui.components.LoopLineLogo
-import com.loopline.puzzle.ui.theme.BackgroundDark
-import com.loopline.puzzle.ui.theme.TextPrimary
+import com.loopline.puzzle.ui.theme.Gold
+import com.loopline.puzzle.ui.theme.backgroundBrush
+import com.loopline.puzzle.ui.theme.goldBrush
 import kotlinx.coroutines.delay
 
 private const val SPLASH_DURATION_MS = 1600L
@@ -50,6 +54,11 @@ fun SplashScreen(onFinished: () -> Unit) {
         animationSpec = tween(durationMillis = 450),
         label = "logoAlpha"
     )
+    val wordmarkAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = 500, delayMillis = 150),
+        label = "wordmarkAlpha"
+    )
 
     LaunchedEffect(Unit) {
         visible = true
@@ -60,7 +69,7 @@ fun SplashScreen(onFinished: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(BackgroundDark),
+            .background(backgroundBrush()),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -69,6 +78,15 @@ fun SplashScreen(onFinished: () -> Unit) {
                 .size(140.dp)
                 .scale(scale)
                 .alpha(alpha)
+        )
+
+        Spacer(modifier = Modifier.height(28.dp))
+
+        GradientText(
+            text = "LOOPLINE",
+            brush = goldBrush(),
+            style = MaterialTheme.typography.headlineMedium.copy(letterSpacing = 3.sp),
+            modifier = Modifier.alpha(wordmarkAlpha)
         )
 
         Spacer(modifier = Modifier.height(56.dp))
@@ -91,12 +109,22 @@ private fun LoadingDots() {
                 ),
                 label = "dot$index"
             )
+            val dotAlpha by transition.animateFloat(
+                initialValue = 0.5f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 500, delayMillis = index * 150),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "dotAlpha$index"
+            )
             Box(
                 modifier = Modifier
-                    .size(10.dp)
+                    .size(9.dp)
                     .scale(dotScale)
-                    .clip(RoundedCornerShape(50))
-                    .background(TextPrimary)
+                    .alpha(dotAlpha)
+                    .clip(CircleShape)
+                    .background(Gold)
             )
         }
     }

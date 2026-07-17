@@ -24,8 +24,6 @@ import androidx.compose.material.icons.filled.Leaderboard
 import androidx.compose.material.icons.filled.SelfImprovement
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,32 +33,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.loopline.puzzle.ui.components.ComingSoonDialog
+import com.loopline.puzzle.ui.components.GradientText
+import com.loopline.puzzle.ui.components.IconChipButton
 import com.loopline.puzzle.ui.components.LoopLineLogo
 import com.loopline.puzzle.ui.components.ModeCard
-import com.loopline.puzzle.ui.theme.AccentBlue
-import com.loopline.puzzle.ui.theme.AccentGreen
-import com.loopline.puzzle.ui.theme.AccentOrange
-import com.loopline.puzzle.ui.theme.BackgroundDark
-import com.loopline.puzzle.ui.theme.TextPrimary
 import com.loopline.puzzle.ui.theme.TextSecondary
+import com.loopline.puzzle.ui.theme.backgroundBrush
+import com.loopline.puzzle.ui.theme.goldBrush
 
 data class GameMode(
     val title: String,
     val description: String,
     val icon: ImageVector,
-    val accent: Color,
+    val accentKey: String,
     val available: Boolean = false
 )
 
 private val modes = listOf(
-    GameMode("Classic", "Connect every tile in one stroke", Icons.Filled.GridOn, AccentBlue, available = true),
-    GameMode("Daily Puzzle", "A fresh challenge every day", Icons.Filled.CalendarToday, AccentOrange),
-    GameMode("Timed", "Beat the clock", Icons.Filled.Timer, AccentGreen),
-    GameMode("Zen", "No timer, no pressure", Icons.Filled.SelfImprovement, AccentBlue),
+    GameMode("Classic", "Connect every tile in one stroke", Icons.Filled.GridOn, "gold", available = true),
+    GameMode("Daily Puzzle", "A fresh challenge every day", Icons.Filled.CalendarToday, "copper"),
+    GameMode("Timed", "Beat the clock", Icons.Filled.Timer, "rosegold"),
+    GameMode("Zen", "No timer, no pressure", Icons.Filled.SelfImprovement, "gold"),
 )
 
 @Composable
@@ -72,7 +68,7 @@ fun HomeScreen(onPlayClassic: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(BackgroundDark)
+            .background(backgroundBrush())
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Spacer(modifier = Modifier.height(48.dp))
@@ -80,16 +76,16 @@ fun HomeScreen(onPlayClassic: () -> Unit) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 24.dp, end = 12.dp),
+                    .padding(start = 24.dp, end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 LoopLineLogo(modifier = Modifier.size(52.dp))
                 Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
+                    GradientText(
                         text = "LoopLine",
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = TextPrimary
+                        brush = goldBrush(),
+                        style = MaterialTheme.typography.headlineMedium
                     )
                     Text(
                         text = "One-stroke puzzles",
@@ -97,27 +93,27 @@ fun HomeScreen(onPlayClassic: () -> Unit) {
                         color = TextSecondary
                     )
                 }
-                IconButton(onClick = { showStatsComingSoon = true }) {
-                    Icon(Icons.Filled.BarChart, contentDescription = "Stats", tint = TextSecondary)
+                IconChipButton(icon = Icons.Filled.BarChart, contentDescription = "Stats") {
+                    showStatsComingSoon = true
                 }
-                IconButton(onClick = { showLeaderboardComingSoon = true }) {
-                    Icon(Icons.Filled.Leaderboard, contentDescription = "Leaderboard", tint = TextSecondary)
+                IconChipButton(icon = Icons.Filled.Leaderboard, contentDescription = "Leaderboard") {
+                    showLeaderboardComingSoon = true
                 }
-                IconButton(onClick = { showComingSoon = true }) {
-                    Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = TextSecondary)
+                IconChipButton(icon = Icons.Filled.Settings, contentDescription = "Settings") {
+                    showComingSoon = true
                 }
             }
 
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(40.dp))
 
             Text(
-                text = "Choose a mode",
-                style = MaterialTheme.typography.titleLarge,
-                color = TextPrimary,
+                text = "CHOOSE A MODE",
+                style = MaterialTheme.typography.labelMedium,
+                color = TextSecondary,
                 modifier = Modifier.padding(horizontal = 24.dp)
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
@@ -130,7 +126,7 @@ fun HomeScreen(onPlayClassic: () -> Unit) {
                         title = mode.title,
                         description = mode.description,
                         icon = mode.icon,
-                        accent = mode.accent,
+                        accentKey = mode.accentKey,
                         badgeText = if (mode.available) "Play" else "Coming soon",
                         badgeHighlighted = mode.available,
                         onClick = {

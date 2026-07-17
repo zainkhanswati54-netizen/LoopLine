@@ -1,13 +1,15 @@
 package com.loopline.puzzle.ui.components
 
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import com.loopline.puzzle.ui.theme.AccentBlue
-import com.loopline.puzzle.ui.theme.SurfaceCard
+import androidx.compose.ui.Modifier
+import com.loopline.puzzle.ui.theme.LoopLineShapes
+import com.loopline.puzzle.ui.theme.SurfaceCardElevated
 import com.loopline.puzzle.ui.theme.TextPrimary
 import com.loopline.puzzle.ui.theme.TextSecondary
+import com.loopline.puzzle.ui.theme.metallicBevel
 
 @Composable
 fun ComingSoonDialog(
@@ -17,13 +19,13 @@ fun ComingSoonDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = SurfaceCard,
-        title = { Text(title, color = TextPrimary) },
-        text = { Text(message, color = TextSecondary) },
+        containerColor = SurfaceCardElevated,
+        shape = LoopLineShapes.dialog,
+        modifier = Modifier.metallicBevel(cornerDp = LoopLineShapes.dialogCornerDp),
+        title = { Text(title, style = MaterialTheme.typography.headlineMedium, color = TextPrimary) },
+        text = { Text(message, style = MaterialTheme.typography.bodyMedium, color = TextSecondary) },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Got it", color = AccentBlue)
-            }
+            MetallicButton(text = "Got it", onClick = onDismiss)
         }
     )
 }

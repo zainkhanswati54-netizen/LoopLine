@@ -2,16 +2,22 @@
 
 A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 
-> Status: **early scaffold.** Splash screen, home screen, app theme, and logo
-> are done. No game mode is playable yet — every mode on the home screen
-> shows a "Coming soon" dialog on tap. That's intentional for this phase.
+> Status: **Classic mode is playable end to end** (Easy/Normal/Hard, endless
+> generated levels, hints, stats bar, win dialog). Daily Puzzle / Timed / Zen
+> are still "Coming soon" placeholders — intentional for this phase.
+>
+> **Visual design pass (this update):** the whole app was re-themed from the
+> original dark-navy/blue-orange-green palette to a premium dark
+> gold-and-copper look, per the brief in `docs/` (or wherever you're tracking
+> it) — see **"Visual redesign"** below for the full rundown of what changed
+> and why.
 
 ## What's in this scaffold
 
 - `MainActivity.kt` — entry point, hosts the Compose nav graph
 - `ui/navigation/LoopLineNavGraph.kt` — Splash → Home → Difficulty Select → Game routing
-- `ui/screens/SplashScreen.kt` — animated logo + loading dots, auto-advances
-- `ui/screens/HomeScreen.kt` — mode grid (Classic is playable, Daily/Timed/Zen are "Coming soon"), Settings icon (Coming soon)
+- `ui/screens/SplashScreen.kt` — animated logo + gold-foil wordmark + loading dots, auto-advances
+- `ui/screens/HomeScreen.kt` — mode grid (Classic is playable, Daily/Timed/Zen are "Coming soon"), Stats/Leaderboard/Settings icons (all "Coming soon" for now)
 - `ui/screens/DifficultySelectScreen.kt` — Easy / Normal / Hard picker, plus a "Continue" card when a session is in progress, plus your best level reached per difficulty
 - `ui/screens/GameScreen.kt` — the Classic mode puzzle: drag to connect every tile in one continuous stroke, with a responsive grid, timer, stars, haptics, and a confetti celebration
 - `game/Level.kt` — the puzzle model (a set of grid cells + a start cell)
@@ -23,8 +29,16 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 - `game/PathSolver.kt` — backtracking solver that completes the stroke from wherever the player currently is; powers the Hint button
 - `ui/components/LoopLineLogo.kt` — the app mark, drawn in code (Canvas), no image asset
 - `ui/components/ModeCard.kt`, `ComingSoonDialog.kt` — reusable UI pieces
-- `ui/theme/` — Color.kt, Type.kt, Theme.kt — dark navy palette + typography scale
-- `res/drawable/ic_launcher_*.xml` — adaptive app icon (same mark as the in-app logo)
+- `ui/components/MetallicButton.kt` — the one primary-button treatment (metal gradient fill, tinted shadow), used by every dialog and CTA
+- `ui/components/IconChipButton.kt` — the shared circular icon-button chip used for back arrows and header icons
+- `ui/components/GradientText.kt` — renders text filled with a Brush (the gold-foil wordmark effect)
+- `ui/theme/Color.kt` — the gold / copper / rose-gold palette and per-accent lookup helpers
+- `ui/theme/Gradients.kt` — reusable Brush gradients + the "metallic bevel" drawing technique (both a Modifier and a raw-Canvas version)
+- `ui/theme/Shape.kt` — shared corner-radius tokens (card / dialog / button / chip)
+- `ui/theme/Type.kt` — Poppins typography scale (real bundled font files, not the system default)
+- `ui/theme/Theme.kt` — wires the palette + typography into Material3's `MaterialTheme`
+- `res/font/` — the 5 Poppins static-weight `.ttf` files (OFL-licensed, bundled directly)
+- `res/drawable/ic_launcher_*.xml` — adaptive app icon (same mark as the in-app logo, now gold/rose-gold)
 
 ## Classic mode — how it plays
 
@@ -109,24 +123,85 @@ difficulty before shipping — every tier hits its target range 99.5–100% of
 the time within the retry budget, including scaled-up late-game grids that
 target near-full coverage.
 
-## Color palette
+## Visual redesign
+
+The UI was re-themed end to end (every screen, dialog, and component) from
+the original dark-navy / blue-orange-green look to a premium dark
+gold-and-copper aesthetic, per this brief:
+
+> Create a premium and classy UI design for a puzzle game with a dark
+> background, featuring brushed gold and copper metallic accents, and
+> smooth gradients. Include clean, modern typography, and buttons with
+> softly rounded edges and subtle shadows to create a luxurious feel.
+
+Design decisions worth knowing about, in case you want to tweak them later:
+
+- **Three metals, not three random colors.** The old code cycled level
+  accents through blue/orange/green — a leftover from before there was a
+  visual identity. The new accent set is gold, copper, and **rose gold**.
+  Rose gold isn't an arbitrary third color: it's literally what you get
+  when you alloy gold and copper, so it stays inside the "gold and copper"
+  brief instead of reaching for an unrelated hue just to get a third
+  gameplay color. Easy/Normal/Hard map to rose-gold/gold/copper respectively,
+  so the palette itself signals the step up in intensity.
+- **The "brushed metal" signature.** Every accent surface (buttons, active
+  tiles, cards, the logo, the connecting stroke) is drawn with a
+  highlight → core → shadow gradient ramp rather than a flat fill, plus a
+  thin diagonal bevel stroke (`metallicBevel` / `drawMetallicBevel` in
+  `Gradients.kt`) that reads as light catching an engraved metal edge. It's
+  the one visual idea repeated everywhere, which is what makes the app feel
+  like one deliberate material instead of a pile of separately-styled
+  screens.
+- **Real bundled fonts, not the system default.** Typography is **Poppins**,
+  fetched as five real static-weight `.ttf` files (Regular/Medium/SemiBold/
+  Bold/ExtraBold) rather than a variable font. That was a deliberate
+  reliability call: most current Google Fonts ship variable-only, and
+  Android's variable-font axis support needs API 26+ — on this app's
+  minSdk 24 (Android 7.0), a variable font would silently render at the
+  wrong weight on the oldest ~0.5% of devices. Static files render
+  pixel-correct on every supported version with zero fallback risk.
+- **Tinted shadows.** `MetallicButton` and `ModeCard` use `Modifier.shadow`
+  with an accent-tinted `ambientColor`/`spotColor` instead of a plain black
+  drop shadow, so a gold button looks lit by its own metal. Colored
+  platform shadows need API 28+; below that, Compose gracefully falls back
+  to an ordinary shadow — no crash, just a slightly less dramatic one on
+  very old devices.
+- **Gold-foil text.** The "LoopLine" wordmark on Splash/Home is filled with
+  a `Brush` gradient instead of a flat color (`GradientText.kt`, using
+  Compose's `TextStyle(brush = ...)`), so it reads as foil rather than
+  yellow ink.
+- **Confetti got a glow-up too.** The win-screen burst now mixes gold/
+  copper/rose-gold dots with small diamond "sparkle" shapes instead of
+  generic party-popper circles in the old blue/orange/green.
+
+### Color palette
 
 | Token | Hex | Use |
 |---|---|---|
-| Background | `#14152B` | app background |
-| Surface | `#1E1F3B` | cards |
-| Tile outline | `#3A3B5C` | grid tiles in the logo |
-| Accent blue | `#2D9CF0` | primary accent |
-| Accent orange | `#F6A623` | secondary accent |
-| Accent green | `#4CAF50` | tertiary accent |
+| Background base | `#110C09` | app background (warm near-black, not navy) |
+| Background elevated | `#1D1510` | top stop of the background gradient |
+| Surface card | `#1F160F` | resting card/dialog surface |
+| Surface card elevated | `#2B2015` | dialogs, elevated surfaces |
+| **Gold** (primary) | `#F8ECC4` → `#CBA25A` → `#9C7A3D` | highlight → core → deep, primary accent |
+| **Copper** (secondary) | `#F3BD8E` → `#C2794C` → `#94552E` | highlight → core → deep, secondary accent |
+| **Rose gold** (tertiary) | `#F1CBBB` → `#C48874` → `#93594A` | highlight → core → deep, tertiary accent |
+| Tile idle | `#E9E0D1` | warm ivory-stone, unfilled tiles |
+| Text primary | `#F6EFE3` | headings, primary content |
+| Text secondary | `#AB9C86` | supporting text |
 
-## Fonts
+Full ramps (each metal also has a `*Shadow` stop for the darkest bevel edge)
+are in `ui/theme/Color.kt`; the `Brush` gradients built from them are in
+`ui/theme/Gradients.kt`.
 
-Typography currently uses the system default font with the reference app's
-weight/size scale. If you want the exact rounded look from the reference
-screenshots, download **Poppins**, **Nunito**, or **DM Sans** from
-[fonts.google.com](https://fonts.google.com), drop the `.ttf` files into
-`app/src/main/res/font/`, and point `LoopLineFontFamily` in `Type.kt` at them.
+### Fonts
+
+Poppins, bundled as real `.ttf` files under `app/src/main/res/font/`
+(`poppins_regular.ttf`, `poppins_medium.ttf`, `poppins_semibold.ttf`,
+`poppins_bold.ttf`, `poppins_extrabold.ttf`), sourced from Google's
+[OFL-licensed](https://openfontlicense.org/) `google/fonts` repository —
+free to bundle and redistribute in the app. `LoopLineFontFamily` in
+`Type.kt` wires them up; no download step needed, they're already in the
+project.
 
 ## Opening the project
 
@@ -168,7 +243,7 @@ with your own keystore — ask when you're ready to set that up.
 
 ## Suggested next steps
 
-- Build the `Classic` mode board (grid state, path-drawing gesture, win check)
-- Swap the placeholder icon set colors if you land on a different mode-count
-- Add level data (JSON or a simple Kotlin data class list) once Classic is playable
-- Wire real navigation from a mode card into a level-select screen instead of the Coming Soon dialog
+- Build out Daily Puzzle / Timed / Zen (currently "Coming soon" placeholders on Home)
+- Wire the Stats and Leaderboard screens behind their existing header icons
+- Gate extra hints behind a rewarded ad (`MAX_HINTS_PER_LEVEL` in `GameScreen.kt` is the knob)
+- If you want a signed release build (Play Store or wider sharing) instead of the debug APK below, that's a separate keystore setup — ask when you're ready

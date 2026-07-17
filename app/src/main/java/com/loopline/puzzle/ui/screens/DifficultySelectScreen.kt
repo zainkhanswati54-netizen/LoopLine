@@ -14,14 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,19 +32,35 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.loopline.puzzle.game.Difficulty
 import com.loopline.puzzle.game.GameSession
 import com.loopline.puzzle.game.ProgressStore
-import com.loopline.puzzle.ui.theme.AccentBlue
-import com.loopline.puzzle.ui.theme.AccentGreen
-import com.loopline.puzzle.ui.theme.AccentOrange
-import com.loopline.puzzle.ui.theme.BackgroundDark
-import com.loopline.puzzle.ui.theme.SurfaceCard
+import com.loopline.puzzle.ui.components.IconChipButton
+import com.loopline.puzzle.ui.components.MetallicButton
+import com.loopline.puzzle.ui.theme.LoopLineShapes
+import com.loopline.puzzle.ui.theme.SurfaceCardElevated
 import com.loopline.puzzle.ui.theme.TextPrimary
 import com.loopline.puzzle.ui.theme.TextSecondary
+import com.loopline.puzzle.ui.theme.accentBrushFor
+import com.loopline.puzzle.ui.theme.accentColorFor
+import com.loopline.puzzle.ui.theme.backgroundBrush
+import com.loopline.puzzle.ui.theme.cardSurfaceBrush
+import com.loopline.puzzle.ui.theme.metallicBevel
+
+/**
+ * Difficulty -> accent metal. Easy gets the softest tone (rose gold),
+ * Normal gets the core brand metal (gold), Hard gets the deepest and
+ * boldest (copper) — the palette itself signals the step up in intensity.
+ */
+private fun accentKeyFor(difficulty: Difficulty): String = when (difficulty) {
+    Difficulty.EASY -> "rosegold"
+    Difficulty.NORMAL -> "gold"
+    Difficulty.HARD -> "copper"
+}
 
 @Composable
 fun DifficultySelectScreen(
@@ -64,17 +77,16 @@ fun DifficultySelectScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(BackgroundDark)
+            .background(backgroundBrush())
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 40.dp, start = 4.dp, end = 24.dp),
+                .padding(top = 40.dp, start = 12.dp, end = 24.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
-            }
+            IconChipButton(icon = Icons.Filled.ArrowBack, contentDescription = "Back", onClick = onBack)
+            Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = "Classic",
                 style = MaterialTheme.typography.headlineMedium,
@@ -89,8 +101,8 @@ fun DifficultySelectScreen(
                 .padding(horizontal = 24.dp)
         ) {
             Text(
-                text = "Pick a difficulty",
-                style = MaterialTheme.typography.bodyMedium,
+                text = "PICK A DIFFICULTY",
+                style = MaterialTheme.typography.labelMedium,
                 color = TextSecondary
             )
 
@@ -103,7 +115,6 @@ fun DifficultySelectScreen(
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 DifficultyCard(
                     difficulty = Difficulty.EASY,
-                    accent = AccentGreen,
                     bestLevel = ProgressStore.bestLevel(context, Difficulty.EASY),
                     inProgressLevel = GameSession.levelNumberFor(Difficulty.EASY)
                         .takeIf { GameSession.hasSession(Difficulty.EASY) },
@@ -112,7 +123,6 @@ fun DifficultySelectScreen(
                 )
                 DifficultyCard(
                     difficulty = Difficulty.NORMAL,
-                    accent = AccentBlue,
                     bestLevel = ProgressStore.bestLevel(context, Difficulty.NORMAL),
                     inProgressLevel = GameSession.levelNumberFor(Difficulty.NORMAL)
                         .takeIf { GameSession.hasSession(Difficulty.NORMAL) },
@@ -121,7 +131,6 @@ fun DifficultySelectScreen(
                 )
                 DifficultyCard(
                     difficulty = Difficulty.HARD,
-                    accent = AccentOrange,
                     bestLevel = ProgressStore.bestLevel(context, Difficulty.HARD),
                     inProgressLevel = GameSession.levelNumberFor(Difficulty.HARD)
                         .takeIf { GameSession.hasSession(Difficulty.HARD) },
@@ -155,26 +164,41 @@ fun DifficultySelectScreen(
 @Composable
 private fun DifficultyCard(
     difficulty: Difficulty,
-    accent: Color,
     bestLevel: Int,
     inProgressLevel: Int?,
     onClick: () -> Unit,
     onRestartClick: () -> Unit
 ) {
+    val accentKey = accentKeyFor(difficulty)
+    val accentColor = accentColorFor(accentKey)
+    val inProgress = inProgressLevel != null
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(if (inProgressLevel != null) accent.copy(alpha = 0.14f) else SurfaceCard)
+            .clip(LoopLineShapes.card)
+            .background(
+                if (inProgress) {
+                    Brush.verticalGradient(
+                        listOf(accentColor.copy(alpha = 0.16f), accentColor.copy(alpha = 0.06f))
+                    )
+                } else {
+                    cardSurfaceBrush()
+                }
+            )
+            .metallicBevel(
+                cornerDp = LoopLineShapes.cardCornerDp,
+                highlight = if (inProgress) accentColor.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.35f)
+            )
             .clickable(onClick = onClick)
             .padding(20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(14.dp)
+                .size(16.dp)
                 .clip(CircleShape)
-                .background(accent)
+                .background(accentBrushFor(accentKey))
         )
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -214,22 +238,20 @@ private fun RestartConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = SurfaceCard,
-        title = { Text("Start ${difficulty.label} over?", color = TextPrimary) },
+        containerColor = SurfaceCardElevated,
+        shape = LoopLineShapes.dialog,
+        modifier = Modifier.metallicBevel(cornerDp = LoopLineShapes.dialogCornerDp),
+        title = { Text("Start ${difficulty.label} over?", style = MaterialTheme.typography.headlineMedium, color = TextPrimary) },
         text = {
             Text(
                 "This clears your current ${difficulty.label} progress and starts again from " +
                     "Level 1. Your saved best level stays as it is.",
+                style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary
             )
         },
         confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = AccentOrange)
-            ) {
-                Text("Restart")
-            }
+            MetallicButton(text = "Restart", onClick = onConfirm, accentKey = accentKeyFor(difficulty))
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {

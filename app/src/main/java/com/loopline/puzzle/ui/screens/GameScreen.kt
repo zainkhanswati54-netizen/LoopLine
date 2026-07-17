@@ -24,11 +24,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,7 +43,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -60,15 +59,28 @@ import com.loopline.puzzle.game.GameSession
 import com.loopline.puzzle.game.LevelRepository
 import com.loopline.puzzle.game.PathSolver
 import com.loopline.puzzle.game.ProgressStore
-import com.loopline.puzzle.ui.theme.AccentBlue
-import com.loopline.puzzle.ui.theme.AccentGreen
-import com.loopline.puzzle.ui.theme.AccentOrange
-import com.loopline.puzzle.ui.theme.BackgroundDark
-import com.loopline.puzzle.ui.theme.SurfaceCard
+import com.loopline.puzzle.ui.components.IconChipButton
+import com.loopline.puzzle.ui.components.MetallicButton
+import com.loopline.puzzle.ui.theme.Copper
+import com.loopline.puzzle.ui.theme.CopperHighlight
+import com.loopline.puzzle.ui.theme.Gold
+import com.loopline.puzzle.ui.theme.GoldHighlight
+import com.loopline.puzzle.ui.theme.LoopLineShapes
+import com.loopline.puzzle.ui.theme.RoseGold
+import com.loopline.puzzle.ui.theme.RoseGoldHighlight
+import com.loopline.puzzle.ui.theme.SurfaceCardElevated
 import com.loopline.puzzle.ui.theme.TextPrimary
 import com.loopline.puzzle.ui.theme.TextSecondary
+import com.loopline.puzzle.ui.theme.TextTertiary
 import com.loopline.puzzle.ui.theme.TileIdle
+import com.loopline.puzzle.ui.theme.TileIdleShade
+import com.loopline.puzzle.ui.theme.accentBrushFor
 import com.loopline.puzzle.ui.theme.accentColorFor
+import com.loopline.puzzle.ui.theme.accentDeepFor
+import com.loopline.puzzle.ui.theme.accentHighlightFor
+import com.loopline.puzzle.ui.theme.backgroundBrush
+import com.loopline.puzzle.ui.theme.drawMetallicBevel
+import com.loopline.puzzle.ui.theme.metallicBevel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -105,7 +117,7 @@ fun GameScreen(
 
     if (level == null) {
         Box(
-            modifier = Modifier.fillMaxSize().background(BackgroundDark),
+            modifier = Modifier.fillMaxSize().background(backgroundBrush()),
             contentAlignment = Alignment.Center
         ) {
             Text("Level not found", color = TextPrimary)
@@ -116,6 +128,9 @@ fun GameScreen(
     val path = remember(levelId) { mutableStateListOf(level.start) }
     val isComplete by remember(levelId) { derivedStateOf { path.size == level.cellCount } }
     val accent = remember(level.accentKey) { accentColorFor(level.accentKey) }
+    val accentBrush = remember(level.accentKey) { accentBrushFor(level.accentKey) }
+    val accentHighlight = remember(level.accentKey) { accentHighlightFor(level.accentKey) }
+    val accentDeep = remember(level.accentKey) { accentDeepFor(level.accentKey) }
 
     var elapsedSeconds by remember(levelId) { mutableStateOf(0) }
     var completionSeconds by remember(levelId) { mutableStateOf(0) }
@@ -209,17 +224,16 @@ fun GameScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(BackgroundDark)
+            .background(backgroundBrush())
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 40.dp, start = 4.dp, end = 16.dp),
+                .padding(top = 40.dp, start = 12.dp, end = 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
-            }
+            IconChipButton(icon = Icons.Filled.ArrowBack, contentDescription = "Back", onClick = onBack)
+            Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = level.title,
@@ -233,7 +247,7 @@ fun GameScreen(
                 )
             }
             if (isSolvingHint) {
-                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
                         strokeWidth = 2.dp,
@@ -241,26 +255,27 @@ fun GameScreen(
                     )
                 }
             } else {
-                IconButton(
-                    onClick = { requestHint() },
-                    enabled = !isComplete && hintsUsed < MAX_HINTS_PER_LEVEL
-                ) {
-                    Icon(
-                        Icons.Filled.Lightbulb,
-                        contentDescription = "Hint",
-                        tint = if (hintsUsed < MAX_HINTS_PER_LEVEL) TextPrimary else TextSecondary
-                    )
+                IconChipButton(
+                    icon = Icons.Filled.Lightbulb,
+                    contentDescription = "Hint",
+                    tint = if (hintsUsed < MAX_HINTS_PER_LEVEL) Gold else TextTertiary,
+                    prominent = hintsUsed < MAX_HINTS_PER_LEVEL,
+                    enabled = !isComplete && hintsUsed < MAX_HINTS_PER_LEVEL,
+                    onClick = { requestHint() }
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            IconChipButton(
+                icon = Icons.Filled.Refresh,
+                contentDescription = "Restart",
+                onClick = {
+                    path.clear()
+                    path.add(level.start)
+                    elapsedSeconds = 0
+                    hintCell = null
+                    hintsUsed = 0
                 }
-            }
-            IconButton(onClick = {
-                path.clear()
-                path.add(level.start)
-                elapsedSeconds = 0
-                hintCell = null
-                hintsUsed = 0
-            }) {
-                Icon(Icons.Filled.Refresh, contentDescription = "Restart", tint = TextPrimary)
-            }
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -308,19 +323,36 @@ fun GameScreen(
                 ) {
                     level.cells.forEach { cell ->
                         val topLeft = Offset(cell.col * stridePx, cell.row * stridePx)
+                        val cellSize = Size(cellPx, cellPx)
+                        val corner = CornerRadius(cellPx * 0.22f)
                         val inPath = cell in path
-                        drawRoundRect(
-                            color = if (inPath) accent.copy(alpha = 0.35f) else TileIdle,
-                            topLeft = topLeft,
-                            size = Size(cellPx, cellPx),
-                            cornerRadius = CornerRadius(cellPx * 0.22f)
-                        )
+                        if (inPath) {
+                            drawRoundRect(brush = accentBrush, topLeft = topLeft, size = cellSize, cornerRadius = corner)
+                            drawMetallicBevel(
+                                topLeft = topLeft,
+                                boxSize = cellSize,
+                                cornerRadiusPx = corner.x,
+                                highlight = Color.White.copy(alpha = 0.4f),
+                                shadow = Color.Black.copy(alpha = 0.3f),
+                                strokeWidthPx = cellPx * 0.045f
+                            )
+                        } else {
+                            drawRoundRect(color = TileIdle, topLeft = topLeft, size = cellSize, cornerRadius = corner)
+                            drawMetallicBevel(
+                                topLeft = topLeft,
+                                boxSize = cellSize,
+                                cornerRadiusPx = corner.x,
+                                highlight = Color.White.copy(alpha = 0.55f),
+                                shadow = TileIdleShade.copy(alpha = 0.7f),
+                                strokeWidthPx = cellPx * 0.035f
+                            )
+                        }
                         if (cell == hintCell) {
                             drawRoundRect(
-                                color = Color.White,
+                                color = Gold,
                                 topLeft = topLeft,
-                                size = Size(cellPx, cellPx),
-                                cornerRadius = CornerRadius(cellPx * 0.22f),
+                                size = cellSize,
+                                cornerRadius = corner,
                                 style = Stroke(width = cellPx * 0.08f)
                             )
                         }
@@ -332,11 +364,30 @@ fun GameScreen(
                             val b = path[i + 1]
                             val centerA = Offset(a.col * stridePx + cellPx / 2f, a.row * stridePx + cellPx / 2f)
                             val centerB = Offset(b.col * stridePx + cellPx / 2f, b.row * stridePx + cellPx / 2f)
+                            // Three-layer stroke - a darker under-edge, the
+                            // core accent, and a thin bright sheen on top -
+                            // reads as a polished metal rod rather than a
+                            // flat line, echoing the same highlight/core/
+                            // deep ramp used everywhere else in the app.
+                            drawLine(
+                                color = accentDeep,
+                                start = centerA,
+                                end = centerB,
+                                strokeWidth = cellPx * 0.18f,
+                                cap = StrokeCap.Round
+                            )
                             drawLine(
                                 color = accent,
                                 start = centerA,
                                 end = centerB,
-                                strokeWidth = cellPx * 0.16f,
+                                strokeWidth = cellPx * 0.14f,
+                                cap = StrokeCap.Round
+                            )
+                            drawLine(
+                                color = accentHighlight.copy(alpha = 0.6f),
+                                start = centerA,
+                                end = centerB,
+                                strokeWidth = cellPx * 0.05f,
                                 cap = StrokeCap.Round
                             )
                         }
@@ -346,7 +397,20 @@ fun GameScreen(
                         level.start.col * stridePx + cellPx / 2f,
                         level.start.row * stridePx + cellPx / 2f
                     )
-                    drawCircle(color = accent, radius = cellPx * 0.24f, center = startCenter)
+                    // A soft double glow behind the start dot, then a
+                    // radial-gradient fill so it reads as a lit metal bead
+                    // rather than a flat circle.
+                    drawCircle(color = accent.copy(alpha = 0.18f), radius = cellPx * 0.55f, center = startCenter)
+                    drawCircle(color = accent.copy(alpha = 0.28f), radius = cellPx * 0.38f, center = startCenter)
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(accentHighlight, accent, accentDeep),
+                            center = startCenter,
+                            radius = cellPx * 0.26f
+                        ),
+                        radius = cellPx * 0.24f,
+                        center = startCenter
+                    )
                 }
 
                 if (isComplete) {
@@ -360,6 +424,7 @@ fun GameScreen(
         LevelCompleteDialog(
             stars = starsFor(completionSeconds, level.cellCount),
             elapsedSeconds = completionSeconds,
+            accentKey = level.accentKey,
             onLevelSelect = onBack,
             onNext = {
                 val nextLevel = GameSession.next()
@@ -375,6 +440,17 @@ private fun starsFor(seconds: Int, cellCount: Int): Int = when {
     else -> 1
 }
 
+/** A confetti particle: where it flies to, what color, and whether it's
+ * drawn as a soft dot or a small diamond sparkle - the two shapes mixed
+ * together read closer to scattered jewelry than a generic party popper. */
+private data class ConfettiParticle(
+    val angle: Float,
+    val distance: Float,
+    val color: Color,
+    val isDiamond: Boolean,
+    val sizeScale: Float
+)
+
 @Composable
 private fun ConfettiBurst(modifier: Modifier = Modifier) {
     val progress = remember { Animatable(0f) }
@@ -382,24 +458,37 @@ private fun ConfettiBurst(modifier: Modifier = Modifier) {
         progress.animateTo(1f, animationSpec = tween(durationMillis = 700))
     }
     val particles = remember {
-        List(20) {
-            val angle = Random.nextFloat() * 2f * Math.PI.toFloat()
-            val distance = 50f + Random.nextFloat() * 90f
-            val color = listOf(AccentBlue, AccentOrange, AccentGreen).random()
-            Triple(angle, distance, color)
+        val palette = listOf(Gold, GoldHighlight, Copper, CopperHighlight, RoseGold, RoseGoldHighlight)
+        List(22) {
+            ConfettiParticle(
+                angle = Random.nextFloat() * 2f * Math.PI.toFloat(),
+                distance = 50f + Random.nextFloat() * 90f,
+                color = palette.random(),
+                isDiamond = Random.nextBoolean(),
+                sizeScale = 0.75f + Random.nextFloat() * 0.6f
+            )
         }
     }
     Canvas(modifier = modifier) {
         val center = Offset(size.width / 2f, size.height / 2f)
         val p = progress.value
-        particles.forEach { (angle, distance, color) ->
-            val x = center.x + cos(angle) * distance * p
-            val y = center.y + sin(angle) * distance * p - (90f * p)
-            drawCircle(
-                color = color.copy(alpha = (1f - p).coerceIn(0f, 1f)),
-                radius = 5f,
-                center = Offset(x, y)
-            )
+        particles.forEach { particle ->
+            val x = center.x + cos(particle.angle) * particle.distance * p
+            val y = center.y + sin(particle.angle) * particle.distance * p - (90f * p)
+            val alpha = (1f - p).coerceIn(0f, 1f)
+            val radius = 5f * particle.sizeScale
+            if (particle.isDiamond) {
+                val diamond = Path().apply {
+                    moveTo(x, y - radius)
+                    lineTo(x + radius, y)
+                    lineTo(x, y + radius)
+                    lineTo(x - radius, y)
+                    close()
+                }
+                drawPath(path = diamond, color = particle.color.copy(alpha = alpha))
+            } else {
+                drawCircle(color = particle.color.copy(alpha = alpha), radius = radius, center = Offset(x, y))
+            }
         }
     }
 }
@@ -408,13 +497,22 @@ private fun ConfettiBurst(modifier: Modifier = Modifier) {
 private fun LevelCompleteDialog(
     stars: Int,
     elapsedSeconds: Int,
+    accentKey: String,
     onLevelSelect: () -> Unit,
     onNext: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = { /* force a choice via the buttons below */ },
-        containerColor = SurfaceCard,
-        title = { Text("Level complete!", color = TextPrimary) },
+        containerColor = SurfaceCardElevated,
+        shape = LoopLineShapes.dialog,
+        modifier = Modifier.metallicBevel(cornerDp = LoopLineShapes.dialogCornerDp),
+        title = {
+            Text(
+                "Level complete!",
+                style = MaterialTheme.typography.headlineMedium,
+                color = TextPrimary
+            )
+        },
         text = {
             Column {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -422,21 +520,20 @@ private fun LevelCompleteDialog(
                         Icon(
                             imageVector = if (index < stars) Icons.Filled.Star else Icons.Filled.StarBorder,
                             contentDescription = null,
-                            tint = if (index < stars) AccentOrange else TextSecondary
+                            tint = if (index < stars) Gold else TextTertiary
                         )
                     }
                 }
                 Spacer(modifier = Modifier.height(10.dp))
-                Text("Solved in ${elapsedSeconds}s", color = TextSecondary)
+                Text(
+                    "Solved in ${elapsedSeconds}s",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
             }
         },
         confirmButton = {
-            Button(
-                onClick = onNext,
-                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue)
-            ) {
-                Text("Next level")
-            }
+            MetallicButton(text = "Next level", onClick = onNext, accentKey = accentKey)
         },
         dismissButton = {
             TextButton(onClick = onLevelSelect) {

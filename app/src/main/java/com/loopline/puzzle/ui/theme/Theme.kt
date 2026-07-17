@@ -5,19 +5,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val LoopLineColorScheme = darkColorScheme(
-    background = BackgroundDark,
+    background = BackgroundBase,
     surface = SurfaceCard,
-    primary = AccentBlue,
-    secondary = AccentOrange,
-    tertiary = AccentGreen,
+    primary = Gold,
+    secondary = Copper,
+    tertiary = RoseGold,
     onBackground = TextPrimary,
     onSurface = TextPrimary,
-    onPrimary = TextPrimary,
+    onPrimary = Color(0xFF1F160F),
 )
 
 @Composable
@@ -26,7 +27,7 @@ fun LoopLineTheme(content: @Composable () -> Unit) {
     if (!view.isInEditMode) {
         val activity = view.context as Activity
         SideEffect {
-            activity.window.statusBarColor = BackgroundDark.toArgb()
+            activity.window.statusBarColor = BackgroundBase.toArgb()
             WindowCompat.getInsetsController(activity.window, view).isAppearanceLightStatusBars = false
         }
     }

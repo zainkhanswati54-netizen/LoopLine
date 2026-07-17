@@ -21,7 +21,7 @@ object LevelRepository {
                 Cell(4, 0), Cell(4, 1), Cell(4, 2), Cell(4, 3),
             ),
             start = Cell(4, 0),
-            accentKey = "green"
+            accentKey = "rosegold"
         ),
         Level(
             id = 2,
@@ -36,7 +36,7 @@ object LevelRepository {
                 Cell(4, 0), Cell(4, 1), Cell(4, 2), Cell(4, 3),
             ),
             start = Cell(0, 4),
-            accentKey = "blue"
+            accentKey = "gold"
         ),
         Level(
             id = 3,
@@ -51,7 +51,7 @@ object LevelRepository {
                 Cell(4, 0), Cell(4, 1), Cell(4, 2), Cell(4, 3), Cell(4, 4),
             ),
             start = Cell(0, 4),
-            accentKey = "orange"
+            accentKey = "copper"
         ),
     )
 

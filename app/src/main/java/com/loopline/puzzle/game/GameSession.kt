@@ -16,7 +16,7 @@ package com.loopline.puzzle.game
 object GameSession {
     private var idCounter = 0
     private val cache = mutableMapOf<Int, Level>()
-    private val accentCycle = listOf("blue", "orange", "green")
+    private val accentCycle = listOf("gold", "copper", "rosegold")
 
     private class Session(var levelNumber: Int, var currentLevel: Level)
     private val sessions = mutableMapOf<Difficulty, Session>()
