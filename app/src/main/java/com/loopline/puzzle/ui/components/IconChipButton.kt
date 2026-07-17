@@ -23,11 +23,11 @@ import com.loopline.puzzle.ui.theme.TextSecondary
 fun IconChipButton(
     icon: ImageVector,
     contentDescription: String,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
     tint: Color = TextSecondary,
     prominent: Boolean = false,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    onClick: () -> Unit
 ) {
     IconButton(
         onClick = onClick,

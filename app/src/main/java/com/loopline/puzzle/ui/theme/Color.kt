@@ -17,6 +17,12 @@ import androidx.compose.ui.graphics.Color
 val BackgroundBase = Color(0xFF110C09)
 val BackgroundElevated = Color(0xFF1D1510)
 
+// Compatibility alias: LevelSelectScreen.kt (not part of the files shared
+// with me — see README/chat) still references the old pre-redesign name.
+// Keeping this avoids breaking that file sight-unseen; safe to delete once
+// that screen is updated to use BackgroundBase / backgroundBrush() directly.
+val BackgroundDark = BackgroundBase
+
 val SurfaceCard = Color(0xFF1F160F)
 val SurfaceCardElevated = Color(0xFF2B2015)
 val SurfaceCardBorder = Color(0xFFD9B26A)

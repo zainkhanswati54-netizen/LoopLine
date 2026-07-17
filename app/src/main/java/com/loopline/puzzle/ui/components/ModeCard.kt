@@ -97,7 +97,10 @@ fun ModeCard(
         Box(
             modifier = Modifier
                 .clip(LoopLineShapes.chip)
-                .background(if (badgeHighlighted) accentBrush else Color.White.copy(alpha = 0.06f))
+                .background(
+                    if (badgeHighlighted) accentBrush
+                    else Brush.linearGradient(listOf(Color.White.copy(alpha = 0.06f), Color.White.copy(alpha = 0.06f)))
+                )
                 .padding(horizontal = 12.dp, vertical = 5.dp)
         ) {
             Text(
