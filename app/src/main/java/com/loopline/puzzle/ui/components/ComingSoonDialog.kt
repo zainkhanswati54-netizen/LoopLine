@@ -10,12 +10,16 @@ import com.loopline.puzzle.ui.theme.TextPrimary
 import com.loopline.puzzle.ui.theme.TextSecondary
 
 @Composable
-fun ComingSoonDialog(onDismiss: () -> Unit) {
+fun ComingSoonDialog(
+    onDismiss: () -> Unit,
+    title: String = "Coming soon",
+    message: String = "This mode is still being built. Stay tuned!"
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = SurfaceCard,
-        title = { Text("Coming soon", color = TextPrimary) },
-        text = { Text("This mode is still being built. Stay tuned!", color = TextSecondary) },
+        title = { Text(title, color = TextPrimary) },
+        text = { Text(message, color = TextSecondary) },
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("Got it", color = AccentBlue)

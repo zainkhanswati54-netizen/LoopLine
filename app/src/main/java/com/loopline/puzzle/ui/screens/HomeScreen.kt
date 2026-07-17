@@ -17,8 +17,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.Leaderboard
 import androidx.compose.material.icons.filled.SelfImprovement
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
@@ -64,6 +66,8 @@ private val modes = listOf(
 @Composable
 fun HomeScreen(onPlayClassic: () -> Unit) {
     var showComingSoon by remember { mutableStateOf(false) }
+    var showStatsComingSoon by remember { mutableStateOf(false) }
+    var showLeaderboardComingSoon by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -92,6 +96,12 @@ fun HomeScreen(onPlayClassic: () -> Unit) {
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary
                     )
+                }
+                IconButton(onClick = { showStatsComingSoon = true }) {
+                    Icon(Icons.Filled.BarChart, contentDescription = "Stats", tint = TextSecondary)
+                }
+                IconButton(onClick = { showLeaderboardComingSoon = true }) {
+                    Icon(Icons.Filled.Leaderboard, contentDescription = "Leaderboard", tint = TextSecondary)
                 }
                 IconButton(onClick = { showComingSoon = true }) {
                     Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = TextSecondary)
@@ -133,6 +143,20 @@ fun HomeScreen(onPlayClassic: () -> Unit) {
 
         if (showComingSoon) {
             ComingSoonDialog(onDismiss = { showComingSoon = false })
+        }
+        if (showStatsComingSoon) {
+            ComingSoonDialog(
+                onDismiss = { showStatsComingSoon = false },
+                title = "Stats \u2014 coming soon",
+                message = "Levels cleared, best times, and streaks per difficulty are on the way."
+            )
+        }
+        if (showLeaderboardComingSoon) {
+            ComingSoonDialog(
+                onDismiss = { showLeaderboardComingSoon = false },
+                title = "Leaderboard \u2014 coming soon",
+                message = "See how your best levels stack up against other players. Coming soon!"
+            )
         }
     }
 }

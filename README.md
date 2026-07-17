@@ -20,6 +20,7 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 - `game/GameSession.kt` — tracks the current difficulty, level count, resumes an in-progress session instead of resetting it, caches generated levels for nav lookup
 - `game/ProgressStore.kt` — persists your best level reached per difficulty (SharedPreferences, survives app restarts)
 - `game/LevelRepository.kt` — 3 handcrafted fallback levels (safety net; the generator is the primary path)
+- `game/PathSolver.kt` — backtracking solver that completes the stroke from wherever the player currently is; powers the Hint button
 - `ui/components/LoopLineLogo.kt` — the app mark, drawn in code (Canvas), no image asset
 - `ui/components/ModeCard.kt`, `ComingSoonDialog.kt` — reusable UI pieces
 - `ui/theme/` — Color.kt, Type.kt, Theme.kt — dark navy palette + typography scale
@@ -42,12 +43,45 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
   from the actual available screen width (`BoxWithConstraints`) instead of a
   fixed 58dp, so a 6×6 (or bigger, once scaled) grid always fits — it just
   uses smaller tiles on narrower screens instead of running off the edge.
-- **Progress no longer resets when you back out and come back.** Previously,
-  picking a difficulty always started over at Level 1, even mid-session.
-  `GameSession.start()` now resumes an in-progress session for the same
-  difficulty; the Difficulty Select screen also shows an explicit
-  **Continue** card so it's clear you have progress waiting. Explicitly
-  tapping a difficulty card still starts a fresh run, if that's what you want.
+- **Switching difficulty no longer resets your progress on the other ones.**
+  `GameSession` used to track a single global difficulty/level/current-level,
+  so picking Hard while you had Easy progress silently overwrote it — going
+  back to Easy afterwards looked reset to Level 1 even though your saved
+  *best* level was untouched. `GameSession` now keeps one independent
+  session per difficulty. Tapping a difficulty on the Difficulty Select
+  screen resumes its own session if it has one; each card shows
+  **"Continue · Level N"** when it does. Starting over is now a deliberate,
+  separate action — a small restart icon on the card, with a confirmation
+  dialog — instead of an accidental side effect of switching difficulties.
+- **Fast backward drags no longer get "stuck" and force a full reset.** The
+  undo logic only ever checked one step back (`path[size - 2]`), which
+  worked for a slow, deliberate drag but not a fast one: dragging quickly
+  back along the stroke samples touch positions in bigger jumps, so it could
+  land two-or-more tiles behind the head. That cell wasn't `path[size - 2]`,
+  so nothing happened — the only way out was tapping the start dot and
+  losing the whole level. `handleTouch` in `GameScreen.kt` now finds the
+  touched cell's position anywhere in the current path (not just one slot
+  back) and retracts to it, so backing up any number of tiles in one drag
+  works the way it visually looks like it should.
+
+## Hint
+
+Tap the lightbulb in the game header (up to 3 uses per level) to have
+`PathSolver` re-solve the puzzle from wherever your stroke currently ends
+and highlight the next correct tile. It's a live backtracking search from
+your *actual* current position each time — not a replay of the generator's
+original solution — so it stays correct even if your stroke has taken a
+different, still-valid route than the one the generator happened to walk.
+Hints are free for now; `MAX_HINTS_PER_LEVEL` in `GameScreen.kt` is the knob
+to wire up to a rewarded ad later.
+
+## Stats & Leaderboard
+
+Both now have an entry point (icons on the Home screen top bar, next to
+Settings) that opens a "Coming soon" dialog explaining what's planned —
+levels cleared / best times / streaks for Stats, and a ranked comparison
+against other players for Leaderboard. Neither collects or sends any data
+yet; they're placeholders so the UI is in place ahead of the real screens.
 
 ## How level generation works (and why it's always solvable)
 

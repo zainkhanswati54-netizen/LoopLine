@@ -15,15 +15,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +48,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -53,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import com.loopline.puzzle.game.Cell
 import com.loopline.puzzle.game.GameSession
 import com.loopline.puzzle.game.LevelRepository
+import com.loopline.puzzle.game.PathSolver
 import com.loopline.puzzle.game.ProgressStore
 import com.loopline.puzzle.ui.theme.AccentBlue
 import com.loopline.puzzle.ui.theme.AccentGreen
@@ -63,7 +69,10 @@ import com.loopline.puzzle.ui.theme.TextPrimary
 import com.loopline.puzzle.ui.theme.TextSecondary
 import com.loopline.puzzle.ui.theme.TileIdle
 import com.loopline.puzzle.ui.theme.accentColorFor
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -71,6 +80,12 @@ import kotlin.random.Random
 private val MAX_CELL_SIZE = 58.dp
 private val MIN_CELL_SIZE = 32.dp
 private val CELL_GAP = 10.dp
+
+// Free for now since the person building this is wiring up monetization
+// separately. To gate extra hints behind a rewarded ad later, this is the
+// number to make ad-unlockable (e.g. grant +1 and re-check this constant
+// after a rewarded-ad callback succeeds).
+private const val MAX_HINTS_PER_LEVEL = 3
 
 @Composable
 fun GameScreen(
@@ -106,6 +121,31 @@ fun GameScreen(
     var completionSeconds by remember(levelId) { mutableStateOf(0) }
     var showDialog by remember(levelId) { mutableStateOf(false) }
 
+    // Hint state: which cell (if any) to highlight as the suggested next
+    // move, whether a solve is currently running in the background, and how
+    // many hints have been spent on this particular level.
+    var hintCell by remember(levelId) { mutableStateOf<Cell?>(null) }
+    var isSolvingHint by remember(levelId) { mutableStateOf(false) }
+    var hintsUsed by remember(levelId) { mutableStateOf(0) }
+    val coroutineScope = rememberCoroutineScope()
+
+    fun requestHint() {
+        if (isComplete || isSolvingHint || hintsUsed >= MAX_HINTS_PER_LEVEL) return
+        isSolvingHint = true
+        val currentPath = path.toList()
+        coroutineScope.launch {
+            // The search can take a moment on a large board, so it runs off
+            // the main thread; the lightbulb shows a spinner while it works.
+            val solution = withContext(Dispatchers.Default) {
+                PathSolver.solveRemaining(level.cells, currentPath)
+            }
+            isSolvingHint = false
+            val next = solution?.firstOrNull() ?: return@launch
+            hintCell = next
+            hintsUsed += 1
+        }
+    }
+
     LaunchedEffect(levelId) {
         while (true) {
             delay(1000)
@@ -135,17 +175,31 @@ fun GameScreen(
         val candidate = Cell(row, col)
         if (candidate !in level.cells) return
 
+        // Backtracking used to only check one step back (path[size - 2]),
+        // which worked fine when the finger moved one tile at a time - but
+        // a fast drag samples touch positions in bigger jumps, so it could
+        // skip straight past that one cell and land two-or-more tiles back
+        // on the stroke. That candidate was already `in path`, so it didn't
+        // match the "extend" branch either, and nothing happened: the
+        // stroke looked stuck moving backward, and the only way out was
+        // tapping the start dot to reset the whole level. Checking the
+        // touched cell's position anywhere in the current path - and
+        // retracting to it - fixes that regardless of how many tiles the
+        // drag skipped, while still behaving exactly like the old one-step
+        // undo when it lands on path[size - 2], and like the old full reset
+        // when it lands on the start dot.
+        val existingIndex = path.indexOf(candidate)
         when {
             candidate == path.last() -> Unit
-            candidate == level.start && path.size > 1 -> {
-                path.clear()
-                path.add(level.start)
+            existingIndex != -1 -> {
+                while (path.size > existingIndex + 1) {
+                    path.removeAt(path.lastIndex)
+                }
+                hintCell = null
             }
-            path.size >= 2 && candidate == path[path.size - 2] -> {
-                path.removeAt(path.lastIndex)
-            }
-            candidate !in path && candidate.isAdjacentTo(path.last()) -> {
+            candidate.isAdjacentTo(path.last()) -> {
                 path.add(candidate)
+                hintCell = null
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
             }
             else -> Unit
@@ -178,10 +232,32 @@ fun GameScreen(
                     color = TextSecondary
                 )
             }
+            if (isSolvingHint) {
+                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = accent
+                    )
+                }
+            } else {
+                IconButton(
+                    onClick = { requestHint() },
+                    enabled = !isComplete && hintsUsed < MAX_HINTS_PER_LEVEL
+                ) {
+                    Icon(
+                        Icons.Filled.Lightbulb,
+                        contentDescription = "Hint",
+                        tint = if (hintsUsed < MAX_HINTS_PER_LEVEL) TextPrimary else TextSecondary
+                    )
+                }
+            }
             IconButton(onClick = {
                 path.clear()
                 path.add(level.start)
                 elapsedSeconds = 0
+                hintCell = null
+                hintsUsed = 0
             }) {
                 Icon(Icons.Filled.Refresh, contentDescription = "Restart", tint = TextPrimary)
             }
@@ -190,7 +266,8 @@ fun GameScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "${path.size} / ${level.cellCount} tiles \u00b7 ${elapsedSeconds}s",
+            text = "${path.size} / ${level.cellCount} tiles \u00b7 ${elapsedSeconds}s \u00b7 " +
+                "${MAX_HINTS_PER_LEVEL - hintsUsed} hint${if (MAX_HINTS_PER_LEVEL - hintsUsed == 1) "" else "s"} left",
             style = MaterialTheme.typography.bodyMedium,
             color = TextSecondary,
             modifier = Modifier.padding(start = 24.dp)
@@ -238,6 +315,15 @@ fun GameScreen(
                             size = Size(cellPx, cellPx),
                             cornerRadius = CornerRadius(cellPx * 0.22f)
                         )
+                        if (cell == hintCell) {
+                            drawRoundRect(
+                                color = Color.White,
+                                topLeft = topLeft,
+                                size = Size(cellPx, cellPx),
+                                cornerRadius = CornerRadius(cellPx * 0.22f),
+                                style = Stroke(width = cellPx * 0.08f)
+                            )
+                        }
                     }
 
                     if (path.size > 1) {

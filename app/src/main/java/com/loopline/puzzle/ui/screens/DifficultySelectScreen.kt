@@ -18,12 +18,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,15 +48,18 @@ import com.loopline.puzzle.ui.theme.BackgroundDark
 import com.loopline.puzzle.ui.theme.SurfaceCard
 import com.loopline.puzzle.ui.theme.TextPrimary
 import com.loopline.puzzle.ui.theme.TextSecondary
-import com.loopline.puzzle.ui.theme.accentColorFor
 
 @Composable
 fun DifficultySelectScreen(
     onBack: () -> Unit,
-    onContinue: () -> Unit,
-    onDifficultySelected: (Difficulty) -> Unit
+    onDifficultySelected: (Difficulty) -> Unit,
+    onRestartDifficulty: (Difficulty) -> Unit
 ) {
     val context = LocalContext.current
+
+    // Which difficulty (if any) the player has tapped "restart" on - shown
+    // as a confirmation dialog before we actually throw away its progress.
+    var pendingRestart by remember { mutableStateOf<Difficulty?>(null) }
 
     Column(
         modifier = Modifier
@@ -77,47 +88,45 @@ fun DifficultySelectScreen(
             modifier = Modifier
                 .padding(horizontal = 24.dp)
         ) {
-            if (GameSession.hasActiveSession) {
-                Text(
-                    text = "In progress",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                ContinueCard(
-                    difficulty = GameSession.difficulty,
-                    levelNumber = GameSession.levelNumber,
-                    onClick = onContinue
-                )
-                Spacer(modifier = Modifier.height(28.dp))
-            }
-
             Text(
-                text = if (GameSession.hasActiveSession) "Or start a new difficulty" else "Pick a difficulty",
+                text = "Pick a difficulty",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Each difficulty tracks its own progress independently, so
+            // Easy/Normal/Hard can each have their own in-progress session
+            // at the same time without stepping on one another - switching
+            // between them and back no longer resets anything.
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 DifficultyCard(
                     difficulty = Difficulty.EASY,
                     accent = AccentGreen,
                     bestLevel = ProgressStore.bestLevel(context, Difficulty.EASY),
-                    onClick = { onDifficultySelected(Difficulty.EASY) }
+                    inProgressLevel = GameSession.levelNumberFor(Difficulty.EASY)
+                        .takeIf { GameSession.hasSession(Difficulty.EASY) },
+                    onClick = { onDifficultySelected(Difficulty.EASY) },
+                    onRestartClick = { pendingRestart = Difficulty.EASY }
                 )
                 DifficultyCard(
                     difficulty = Difficulty.NORMAL,
                     accent = AccentBlue,
                     bestLevel = ProgressStore.bestLevel(context, Difficulty.NORMAL),
-                    onClick = { onDifficultySelected(Difficulty.NORMAL) }
+                    inProgressLevel = GameSession.levelNumberFor(Difficulty.NORMAL)
+                        .takeIf { GameSession.hasSession(Difficulty.NORMAL) },
+                    onClick = { onDifficultySelected(Difficulty.NORMAL) },
+                    onRestartClick = { pendingRestart = Difficulty.NORMAL }
                 )
                 DifficultyCard(
                     difficulty = Difficulty.HARD,
                     accent = AccentOrange,
                     bestLevel = ProgressStore.bestLevel(context, Difficulty.HARD),
-                    onClick = { onDifficultySelected(Difficulty.HARD) }
+                    inProgressLevel = GameSession.levelNumberFor(Difficulty.HARD)
+                        .takeIf { GameSession.hasSession(Difficulty.HARD) },
+                    onClick = { onDifficultySelected(Difficulty.HARD) },
+                    onRestartClick = { pendingRestart = Difficulty.HARD }
                 )
             }
 
@@ -130,50 +139,33 @@ fun DifficultySelectScreen(
             )
         }
     }
-}
 
-@Composable
-private fun ContinueCard(difficulty: Difficulty, levelNumber: Int, onClick: () -> Unit) {
-    val accent = accentColorFor(
-        when (difficulty) {
-            Difficulty.EASY -> "green"
-            Difficulty.NORMAL -> "blue"
-            Difficulty.HARD -> "orange"
-        }
-    )
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(accent.copy(alpha = 0.16f))
-            .clickable(onClick = onClick)
-            .padding(20.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(accent),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White)
-        }
-        Spacer(modifier = Modifier.width(16.dp))
-        Column {
-            Text("Level $levelNumber \u00b7 ${difficulty.label}", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
-            Text("Continue where you left off", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-        }
+    pendingRestart?.let { difficulty ->
+        RestartConfirmDialog(
+            difficulty = difficulty,
+            onConfirm = {
+                onRestartDifficulty(difficulty)
+                pendingRestart = null
+            },
+            onDismiss = { pendingRestart = null }
+        )
     }
 }
 
 @Composable
-private fun DifficultyCard(difficulty: Difficulty, accent: Color, bestLevel: Int, onClick: () -> Unit) {
+private fun DifficultyCard(
+    difficulty: Difficulty,
+    accent: Color,
+    bestLevel: Int,
+    inProgressLevel: Int?,
+    onClick: () -> Unit,
+    onRestartClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .background(SurfaceCard)
+            .background(if (inProgressLevel != null) accent.copy(alpha = 0.14f) else SurfaceCard)
             .clickable(onClick = onClick)
             .padding(20.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -188,12 +180,61 @@ private fun DifficultyCard(difficulty: Difficulty, accent: Color, bestLevel: Int
         Column(modifier = Modifier.weight(1f)) {
             Text(difficulty.label, style = MaterialTheme.typography.titleLarge, color = TextPrimary)
             Spacer(modifier = Modifier.height(2.dp))
+            val subtitle = when {
+                inProgressLevel != null && bestLevel > 0 ->
+                    "Continue \u00b7 Level $inProgressLevel  \u2022  Best: Level $bestLevel"
+                inProgressLevel != null -> "Continue \u00b7 Level $inProgressLevel"
+                bestLevel > 0 -> "Best: Level $bestLevel"
+                else -> difficulty.description
+            }
             Text(
-                text = if (bestLevel > 0) "Best: Level $bestLevel" else difficulty.description,
+                text = subtitle,
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary
             )
         }
+        if (inProgressLevel != null) {
+            IconButton(onClick = onRestartClick) {
+                Icon(
+                    Icons.Filled.RestartAlt,
+                    contentDescription = "Start ${difficulty.label} over",
+                    tint = TextSecondary
+                )
+            }
+        }
         Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = TextSecondary)
     }
+}
+
+@Composable
+private fun RestartConfirmDialog(
+    difficulty: Difficulty,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceCard,
+        title = { Text("Start ${difficulty.label} over?", color = TextPrimary) },
+        text = {
+            Text(
+                "This clears your current ${difficulty.label} progress and starts again from " +
+                    "Level 1. Your saved best level stays as it is.",
+                color = TextSecondary
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = AccentOrange)
+            ) {
+                Text("Restart")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = TextSecondary)
+            }
+        }
+    )
 }
