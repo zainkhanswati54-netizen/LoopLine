@@ -35,11 +35,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.loopline.puzzle.ui.components.ComingSoonDialog
 import com.loopline.puzzle.ui.components.GradientText
 import com.loopline.puzzle.ui.components.IconChipButton
 import com.loopline.puzzle.ui.components.LoopLineLogo
 import com.loopline.puzzle.ui.components.ModeCard
+import com.loopline.puzzle.ui.components.ShineText
 import com.loopline.puzzle.ui.theme.TextSecondary
 import com.loopline.puzzle.ui.theme.backgroundBrush
 import com.loopline.puzzle.ui.theme.goldBrush
@@ -104,16 +106,15 @@ fun HomeScreen(onPlayClassic: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            Text(
+            ShineText(
                 text = "CHOOSE A MODE",
-                style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary,
+                style = MaterialTheme.typography.headlineMedium.copy(letterSpacing = 1.2.sp),
                 modifier = Modifier.padding(horizontal = 24.dp)
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
@@ -129,6 +130,10 @@ fun HomeScreen(onPlayClassic: () -> Unit) {
                         accentKey = mode.accentKey,
                         badgeText = if (mode.available) "Play" else "Coming soon",
                         badgeHighlighted = mode.available,
+                        // The row's height follows its tallest cell, so
+                        // this top padding nudges Classic down without
+                        // disturbing Daily Puzzle beside it.
+                        modifier = if (mode.title == "Classic") Modifier.padding(top = 18.dp) else Modifier,
                         onClick = {
                             if (mode.available) onPlayClassic() else showComingSoon = true
                         }

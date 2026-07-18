@@ -76,6 +76,16 @@ fun LoopLineNavGraph() {
                     navController.navigate(Routes.game(newId)) {
                         popUpTo(Routes.DIFFICULTY_SELECT) { inclusive = false }
                     }
+                },
+                onGoHome = {
+                    // "Go to Home" from the Pause Menu: clear the Difficulty
+                    // Select / Game entries off the back stack entirely so
+                    // a subsequent system-back from Home exits the app
+                    // rather than re-entering the paused level.
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.HOME) { inclusive = true }
+                        launchSingleTop = true
+                    }
                 }
             )
         }

@@ -1,8 +1,10 @@
 package com.loopline.puzzle.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -33,9 +35,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -127,7 +129,8 @@ private const val MAX_HINTS_PER_LEVEL = 3
 fun GameScreen(
     levelId: Int,
     onBack: () -> Unit,
-    onNavigateToLevel: (Int) -> Unit
+    onNavigateToLevel: (Int) -> Unit,
+    onGoHome: () -> Unit
 ) {
     val context = LocalContext.current
     val hapticFeedback = LocalHapticFeedback.current
@@ -160,6 +163,12 @@ fun GameScreen(
     var completionSeconds by remember(levelId) { mutableStateOf(0) }
     var showDialog by remember(levelId) { mutableStateOf(false) }
 
+    // Pausing freezes the clock (checked in the timer LaunchedEffect below)
+    // and, because the Pause Menu is a real Dialog, also blocks every touch
+    // from reaching the grid underneath - so "pausing" doesn't need to
+    // separately suspend the drag handler or the decorative animations.
+    var isPaused by remember(levelId) { mutableStateOf(false) }
+
     // Per-connection "juice": every time a new tile joins the stroke, these
     // reset and animate back to their resting value, driving (1) the newest
     // segment drawing itself in rather than popping into existence, (2) a
@@ -180,6 +189,20 @@ fun GameScreen(
             animation = tween(durationMillis = 1600, easing = LinearEasing)
         ),
         label = "flowPhase"
+    )
+
+    // A slow breathing glow behind the stroke - width and brightness tick
+    // up and down together - layered under the existing three-tone stroke
+    // so the whole path reads as a lit rod rather than a static ribbon.
+    val glowTransition = rememberInfiniteTransition(label = "pathGlow")
+    val glowPulse by glowTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1400, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowPulse"
     )
 
     // A gentle, non-blocking nudge: if the player sits without extending
@@ -217,7 +240,8 @@ fun GameScreen(
     LaunchedEffect(levelId) {
         while (true) {
             delay(1000)
-            if (!isComplete) elapsedSeconds += 1 else break
+            if (isComplete) break
+            if (!isPaused) elapsedSeconds += 1
         }
     }
 
@@ -240,12 +264,24 @@ fun GameScreen(
     // gives the player a fresh 9s window before it's offered again. A
     // manual dismiss (see the banner's onDismiss) isn't overridden by this
     // effect, since setting showNeedHelp = false doesn't re-trigger it.
-    LaunchedEffect(levelId, path.size, isComplete) {
+    LaunchedEffect(levelId, path.size, isComplete, isPaused) {
         showNeedHelp = false
-        if (!isComplete && hintsUsed < MAX_HINTS_PER_LEVEL) {
+        if (!isComplete && !isPaused && hintsUsed < MAX_HINTS_PER_LEVEL) {
             delay(9000)
             if (!isSolvingHint) showNeedHelp = true
         }
+    }
+
+    // The old behavior let the system back button pop straight out of the
+    // screen (or, on a double-press, out of the app) while the timer kept
+    // running underneath - the "33s to 71s" background-timer bug. Now back
+    // always opens the Pause Menu instead; once the menu's own Dialog is
+    // showing, its default dismiss-on-back (see PauseMenuDialog's
+    // onDismissRequest) resumes the game the same way tapping Continue
+    // does, so back never has to be handled twice. It's disabled while the
+    // level-complete dialog is up so the two modals can't stack.
+    BackHandler(enabled = !isPaused && !showDialog) {
+        isPaused = true
     }
 
     fun handleTouch(offset: Offset, cellPx: Float, stridePx: Float) {
@@ -306,10 +342,18 @@ fun GameScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        Column(
+        // Background is its own layer (not just a Column modifier) so the
+        // ambient particles below can sit on top of the gradient but
+        // underneath the header/grid content, instead of a flat fill.
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(backgroundBrush())
+        )
+        AmbientParticles(modifier = Modifier.fillMaxSize())
+
+        Column(
+            modifier = Modifier.fillMaxSize()
         ) {
         Row(
             modifier = Modifier
@@ -317,7 +361,12 @@ fun GameScreen(
                 .padding(top = 40.dp, start = 12.dp, end = 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconChipButton(icon = Icons.Filled.ArrowBack, contentDescription = "Back", onClick = onBack)
+            IconChipButton(
+                icon = Icons.Filled.Pause,
+                contentDescription = "Pause",
+                enabled = !isComplete,
+                onClick = { isPaused = true }
+            )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -471,6 +520,17 @@ fun GameScreen(
                             } else {
                                 centerB
                             }
+                            // Soft glow underlay, widening and brightening
+                            // with glowPulse - drawn first so the crisp
+                            // stroke on top of it still reads clearly.
+                            drawLine(
+                                color = accent.copy(alpha = 0.20f + 0.14f * glowPulse),
+                                start = centerA,
+                                end = drawnEnd,
+                                strokeWidth = cellPx * (0.28f + 0.10f * glowPulse),
+                                cap = StrokeCap.Round
+                            )
+
                             // Three-layer stroke - a darker under-edge, the
                             // core accent, and a thin bright sheen on top -
                             // reads as a polished metal rod rather than a
@@ -595,6 +655,16 @@ fun GameScreen(
             }
         )
     }
+
+    if (isPaused) {
+        PauseMenuDialog(
+            onContinue = { isPaused = false },
+            onGoHome = {
+                isPaused = false
+                onGoHome()
+            }
+        )
+    }
 }
 
 private fun starsFor(seconds: Int, cellCount: Int): Int = when {
@@ -664,6 +734,65 @@ private fun NeedHelpBanner(
     }
 }
 
+/** One drifting mote: a fixed horizontal anchor plus a speed and phase so a
+ * whole field of these never reads as one synchronized loop. */
+private data class AmbientParticle(
+    val seed: Float,
+    val speed: Float,
+    val phase: Float,
+    val radius: Float,
+    val color: Color
+)
+
+/**
+ * Slow-drifting, glowing motes behind the grid - the "no flat color"
+ * background. Each one rises from the bottom of the screen to the top on
+ * its own loop, fading in and out at the edges so nothing pops in or out
+ * abruptly, then wraps back to the bottom. Deliberately faint (peak alpha
+ * ~0.3) so it reads as ambient texture, not as something competing with
+ * the puzzle itself.
+ */
+@Composable
+private fun AmbientParticles(modifier: Modifier = Modifier) {
+    val particles = remember {
+        val palette = listOf(Gold, Copper, RoseGold, GoldHighlight)
+        List(16) {
+            AmbientParticle(
+                seed = Random.nextFloat(),
+                speed = 0.55f + Random.nextFloat() * 0.7f,
+                phase = Random.nextFloat() * 2f * Math.PI.toFloat(),
+                radius = 1.5f + Random.nextFloat() * 2.5f,
+                color = palette.random()
+            )
+        }
+    }
+    val transition = rememberInfiniteTransition(label = "ambientParticles")
+    val time by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(animation = tween(durationMillis = 26000, easing = LinearEasing)),
+        label = "ambientTime"
+    )
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        if (w <= 0f || h <= 0f) return@Canvas
+        particles.forEach { p ->
+            val travel = (time * p.speed + p.seed).mod(1f)
+            val y = h * (1f - travel)
+            val sway = sin(travel * 4f * Math.PI.toFloat() + p.phase) * (w * 0.025f)
+            var x = p.seed * w + sway
+            if (x < 0f) x += w
+            if (x > w) x -= w
+            // Fade in near the bottom, fade out near the top, so the
+            // wrap-around point is never visible as a hard pop.
+            val alpha = minOf(travel * 6f, (1f - travel) * 6f).coerceIn(0f, 1f) * 0.32f
+            drawCircle(color = p.color.copy(alpha = alpha * 0.4f), radius = p.radius * 2.6f, center = Offset(x, y))
+            drawCircle(color = p.color.copy(alpha = alpha), radius = p.radius, center = Offset(x, y))
+        }
+    }
+}
+
 /** A confetti particle: where it flies to, what color, and whether it's
  * drawn as a soft dot or a small diamond sparkle - the two shapes mixed
  * together read closer to scattered jewelry than a generic party popper. */
@@ -679,14 +808,14 @@ private data class ConfettiParticle(
 private fun ConfettiBurst(modifier: Modifier = Modifier) {
     val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        progress.animateTo(1f, animationSpec = tween(durationMillis = 700))
+        progress.animateTo(1f, animationSpec = tween(durationMillis = 850))
     }
     val particles = remember {
         val palette = listOf(Gold, GoldHighlight, Copper, CopperHighlight, RoseGold, RoseGoldHighlight)
-        List(22) {
+        List(28) {
             ConfettiParticle(
                 angle = Random.nextFloat() * 2f * Math.PI.toFloat(),
-                distance = 50f + Random.nextFloat() * 90f,
+                distance = 50f + Random.nextFloat() * 100f,
                 color = palette.random(),
                 isDiamond = Random.nextBoolean(),
                 sizeScale = 0.75f + Random.nextFloat() * 0.6f
@@ -696,6 +825,21 @@ private fun ConfettiBurst(modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
         val center = Offset(size.width / 2f, size.height / 2f)
         val p = progress.value
+        // A quick soft-white flash at the moment of completion, expanding
+        // and fading under the confetti - the "reward" punch before the
+        // particles take over.
+        val flashAlpha = (1f - p).coerceIn(0f, 1f) * 0.45f
+        if (flashAlpha > 0f) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color.White.copy(alpha = flashAlpha), Color.Transparent),
+                    center = center,
+                    radius = size.minDimension * (0.35f + p * 0.5f)
+                ),
+                radius = size.minDimension * (0.35f + p * 0.5f),
+                center = center
+            )
+        }
         particles.forEach { particle ->
             val x = center.x + cos(particle.angle) * particle.distance * p
             val y = center.y + sin(particle.angle) * particle.distance * p - (90f * p)
@@ -762,6 +906,44 @@ private fun LevelCompleteDialog(
         dismissButton = {
             TextButton(onClick = onLevelSelect) {
                 Text("Change difficulty", color = TextSecondary)
+            }
+        }
+    )
+}
+
+/**
+ * Continue resumes exactly where the player left off (the timer never
+ * moved while this was up); Go to Home exits to mode selection. Tapping
+ * outside the dialog or pressing system back both count as "Continue" via
+ * onDismissRequest, since a real Dialog window intercepts back itself -
+ * the BackHandler in GameScreen only needs to handle the *unpaused* case.
+ */
+@Composable
+private fun PauseMenuDialog(
+    onContinue: () -> Unit,
+    onGoHome: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onContinue,
+        containerColor = SurfaceCardElevated,
+        shape = LoopLineShapes.dialog,
+        modifier = Modifier.metallicBevel(cornerDp = LoopLineShapes.dialogCornerDp),
+        title = {
+            Text("Paused", style = MaterialTheme.typography.headlineMedium, color = TextPrimary)
+        },
+        text = {
+            Text(
+                "The clock's stopped \u2014 take your time.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary
+            )
+        },
+        confirmButton = {
+            MetallicButton(text = "Continue", onClick = onContinue)
+        },
+        dismissButton = {
+            TextButton(onClick = onGoHome) {
+                Text("Go to Home", color = TextSecondary)
             }
         }
     )
