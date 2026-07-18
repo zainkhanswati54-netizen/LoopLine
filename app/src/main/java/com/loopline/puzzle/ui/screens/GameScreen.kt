@@ -302,33 +302,18 @@ fun GameScreen(
         val candidate = Cell(row, col)
         if (candidate !in level.cells) return
 
-        // Backtracking used to only check one step back (path[size - 2]),
-        // which worked fine when the finger moved one tile at a time - but
-        // a fast drag samples touch positions in bigger jumps, so it could
-        // skip straight past that one cell and land two-or-more tiles back
-        // on the stroke. That candidate was already `in path`, so it didn't
-        // match the "extend" branch either, and nothing happened: the
-        // stroke looked stuck moving backward, and the only way out was
-        // tapping the start dot to reset the whole level. Checking the
-        // touched cell's position anywhere in the current path - and
-        // retracting to it - fixes that regardless of how many tiles the
-        // drag skipped, while still behaving exactly like the old one-step
-        // undo when it lands on path[size - 2], and like the old full reset
-        // when it lands on the start dot.
+        // The stroke is now one-directional: once a tile has been connected,
+        // dragging back over it (or over the start dot) does nothing - it no
+        // longer retracts the path. This used to double as an undo/reset
+        // gesture, but it's a deliberate rule change: a wrong turn is now
+        // permanent for that attempt, which raises the stakes of every move
+        // instead of letting a careless drag get walked back for free. The
+        // header's Restart button (already a separate, deliberate action)
+        // is the only way back to the start now.
         val existingIndex = path.indexOf(candidate)
         when {
             candidate == path.last() -> Unit
-            existingIndex != -1 -> {
-                val stepsBack = path.size - (existingIndex + 1)
-                while (path.size > existingIndex + 1) {
-                    path.removeAt(path.lastIndex)
-                }
-                hintCell = null
-                if (stepsBack > 0) {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    soundPlayer.playRetract()
-                }
-            }
+            existingIndex != -1 -> Unit
             candidate.isAdjacentTo(path.last()) -> {
                 path.add(candidate)
                 hintCell = null

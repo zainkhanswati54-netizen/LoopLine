@@ -58,13 +58,16 @@ fun ModeCard(
     val accentBrush = accentBrushFor(accentKey)
 
     // A slow, subtle breathing pulse - scale and glow tick to the same
-    // phase - so every card reads as tappable even before the first touch.
-    // Each card starts its cycle at a different offset (derived from its
-    // own title) so a grid of these never breathes in mechanical unison.
+    // phase - so the one truly playable card reads as tappable and alive.
+    // "Coming soon" tiles deliberately don't get this: they used to breathe
+    // with the exact same energy as Classic, which made a placeholder like
+    // Zen look like a fully-live mode sitting right next to it. Now only
+    // badgeHighlighted cards animate; everything else sits still and reads
+    // as secondary at a glance.
     val pulseTransition = rememberInfiniteTransition(label = "modeCardPulse")
     val pulse by pulseTransition.animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
+        targetValue = if (badgeHighlighted) 1f else 0f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 2400, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
@@ -73,7 +76,7 @@ fun ModeCard(
         label = "pulse"
     )
     val pulseScale = 1f + pulse * 0.015f
-    val glowAlpha = (if (badgeHighlighted) 0.30f else 0.18f) + pulse * 0.12f
+    val glowAlpha = (if (badgeHighlighted) 0.30f else 0.10f) + pulse * 0.12f
 
     Column(
         modifier = modifier

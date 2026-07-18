@@ -45,13 +45,51 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 - Tap **Classic** on the home screen → pick **Easy / Normal / Hard** (or **Continue** if you already have a session going).
 - Drag from the colored start dot through adjacent tiles (no diagonals).
 - Every tile must be visited exactly once, in one continuous stroke.
-- Touching the previous tile again undoes one step; touching the start dot resets the level.
-- A short haptic tick confirms each tile you connect.
+- **The stroke is one-directional - there's no dragging back over it.** Once
+  a tile is connected it stays connected; touching an earlier tile (or the
+  start dot) does nothing. A wrong turn is permanent for that attempt - the
+  only way back to the start is the **Restart** icon in the header. This
+  raises the stakes of every move instead of letting a careless drag get
+  walked back for free.
+- A short haptic tick and a soft pop sound confirm each tile you connect.
 - The header shows a live `filled / total` tile counter and elapsed time.
 - Completing a level plays a quick confetti burst, then a dialog with a **star rating** (based on solve time relative to puzzle size), **Next level** (fresh puzzle, same difficulty, slightly bigger every 5 levels), or **Change difficulty**.
 - Play is endless — no fixed level count.
 
 ## Recent fixes (this update)
+
+- **App launcher icon now uses the same gold logo.** The adaptive icon
+  (`mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml`) now
+  points both its background and foreground layers at the bundled logo
+  bitmap (`drawable-nodpi/ic_launcher_photo.png`), with legacy PNG
+  fallbacks generated for every density (`mipmap-mdpi` through
+  `mipmap-xxxhdpi`) for pre-API26 devices. The old vector
+  `ic_launcher_background.xml` / `ic_launcher_foreground.xml` are gone.
+- **The stroke no longer goes backward - at all.** This was the single
+  biggest gameplay change this round: touching an already-visited tile
+  (including the start dot) used to retract the stroke back to that point.
+  That's removed. Once a tile is connected it's connected for good; a wrong
+  turn is now permanent for that attempt, and the header's **Restart**
+  button is the only way back to Level 1 of that attempt. Raises the
+  stakes of every drag instead of letting you walk back mistakes for free.
+  (See "Classic mode — how it plays" below for the updated rules, and the
+  superseded note under "testing feedback" further down for what this
+  replaced.)
+- **Home screen actually restructured, not just reordered.** Last round
+  only reordered the mode grid, which just moved the "a coming-soon mode
+  sitting right next to Classic looks half-finished" problem onto Zen
+  instead of fixing it. Now Classic gets its own full-width
+  `FeaturedModeBanner` right under the header - closer to how NumRush gives
+  its live Daily Challenge a standalone prominent row instead of making it
+  fight placeholder tiles for attention - and Zen / Timed / Daily Puzzle
+  sit together underneath in a smaller, visually quieter "More modes" grid.
+  Their cards no longer breathe with the same pulsing glow as a real,
+  playable mode (see `ModeCard.kt`'s `badgeHighlighted` handling) so they
+  read as secondary at a glance instead of equally alive.
+- **Zen's icon swapped.** `Icons.Filled.SelfImprovement` (a literal
+  meditating stick figure) stood out as slightly cartoonish next to every
+  other card's abstract icon (grid, clock, calendar) - replaced with
+  `Icons.Filled.Spa`, which reads as calm without being a human figure.
 
 - **Brand logo swapped in.** `LoopLineLogo` (Splash + Home) now renders the
   ornate gold circular badge image (`res/drawable-nodpi/loopline_logo.jpg`)
@@ -98,16 +136,17 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
   **"Continue · Level N"** when it does. Starting over is now a deliberate,
   separate action — a small restart icon on the card, with a confirmation
   dialog — instead of an accidental side effect of switching difficulties.
-- **Fast backward drags no longer get "stuck" and force a full reset.** The
+- **Backward dragging was removed entirely (superseded the old undo-by-touch fix below).** The stroke used to let you retract by dragging back over already-visited tiles - see the "Fast backward drags" note just below for why that existed. That whole mechanism is now gone: touching any previously-visited tile (including the start dot) simply does nothing. It's a deliberate rule change, not a bug fix - see "Recent fixes (this update)" above.
+- ~~Fast backward drags no longer get "stuck" and force a full reset.~~ *(superseded - see above)* The
   undo logic only ever checked one step back (`path[size - 2]`), which
   worked for a slow, deliberate drag but not a fast one: dragging quickly
   back along the stroke samples touch positions in bigger jumps, so it could
   land two-or-more tiles behind the head. That cell wasn't `path[size - 2]`,
   so nothing happened — the only way out was tapping the start dot and
-  losing the whole level. `handleTouch` in `GameScreen.kt` now finds the
+  losing the whole level. `handleTouch` in `GameScreen.kt` used to find the
   touched cell's position anywhere in the current path (not just one slot
-  back) and retracts to it, so backing up any number of tiles in one drag
-  works the way it visually looks like it should.
+  back) and retract to it - now it just does nothing on any past tile,
+  which sidesteps the whole class of bug by removing backward movement.
 
 ## Hint
 

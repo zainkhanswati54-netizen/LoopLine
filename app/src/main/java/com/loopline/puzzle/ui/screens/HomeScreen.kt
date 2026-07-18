@@ -21,8 +21,8 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Leaderboard
-import androidx.compose.material.icons.filled.SelfImprovement
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Spa
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.loopline.puzzle.ui.components.ComingSoonDialog
+import com.loopline.puzzle.ui.components.FeaturedModeBanner
 import com.loopline.puzzle.ui.components.GradientText
 import com.loopline.puzzle.ui.components.IconChipButton
 import com.loopline.puzzle.ui.components.LoopLineLogo
@@ -54,9 +55,10 @@ data class GameMode(
     val available: Boolean = false
 )
 
-private val modes = listOf(
-    GameMode("Classic", "Connect every tile in one stroke", Icons.Filled.GridOn, "gold", available = true),
-    GameMode("Zen", "No timer, no pressure", Icons.Filled.SelfImprovement, "rosegold"),
+private val featuredMode = GameMode("Classic", "Connect every tile in one stroke", Icons.Filled.GridOn, "gold", available = true)
+
+private val secondaryModes = listOf(
+    GameMode("Zen", "No timer, no pressure", Icons.Filled.Spa, "rosegold"),
     GameMode("Timed", "Beat the clock", Icons.Filled.Timer, "copper"),
     GameMode("Daily Puzzle", "A fresh challenge every day", Icons.Filled.CalendarToday, "gold"),
 )
@@ -106,10 +108,21 @@ fun HomeScreen(onPlayClassic: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            FeaturedModeBanner(
+                title = featuredMode.title,
+                description = featuredMode.description,
+                icon = featuredMode.icon,
+                accentKey = featuredMode.accentKey,
+                onClick = onPlayClassic,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+
+            Spacer(modifier = Modifier.height(28.dp))
 
             ShineText(
-                text = "CHOOSE A MODE",
+                text = "MORE MODES",
                 style = MaterialTheme.typography.headlineMedium.copy(letterSpacing = 1.2.sp),
                 modifier = Modifier.padding(horizontal = 24.dp)
             )
@@ -122,21 +135,15 @@ fun HomeScreen(onPlayClassic: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(modes) { mode ->
+                items(secondaryModes) { mode ->
                     ModeCard(
                         title = mode.title,
                         description = mode.description,
                         icon = mode.icon,
                         accentKey = mode.accentKey,
-                        badgeText = if (mode.available) "Play" else "Coming soon",
-                        badgeHighlighted = mode.available,
-                        // The row's height follows its tallest cell, so
-                        // this top padding nudges Classic down without
-                        // disturbing Daily Puzzle beside it.
-                        modifier = if (mode.title == "Classic") Modifier.padding(top = 18.dp) else Modifier,
-                        onClick = {
-                            if (mode.available) onPlayClassic() else showComingSoon = true
-                        }
+                        badgeText = "Coming soon",
+                        badgeHighlighted = false,
+                        onClick = { showComingSoon = true }
                     )
                 }
             }
