@@ -1,0 +1,47 @@
+package com.loopline.puzzle.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
+import com.loopline.puzzle.ui.theme.TextPrimary
+import com.loopline.puzzle.ui.theme.TextSecondary
+
+/**
+ * A quiet circular chip around an icon — used for the back arrow and
+ * header utility icons so tap targets read as one deliberate family
+ * instead of bare Material icons floating on the background.
+ */
+@Composable
+fun IconChipButton(
+    icon: ImageVector,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    tint: Color = TextSecondary,
+    prominent: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(TextPrimary.copy(alpha = if (prominent) 0.08f else 0.05f))
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}

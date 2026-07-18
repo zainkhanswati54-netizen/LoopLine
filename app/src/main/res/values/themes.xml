@@ -1,0 +1,9 @@
+<resources>
+    <!-- Base application theme. Compose owns all real styling in ui/theme/Theme.kt;
+         this just sets the window/status bar color so there's no white flash
+         before Compose draws the first frame. -->
+    <style name="Theme.LoopLine" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@color/background_dark</item>
+        <item name="android:windowBackground">@color/background_dark</item>
+    </style>
+</resources>
