@@ -89,6 +89,32 @@ different, still-valid route than the one the generator happened to walk.
 Hints are free for now; `MAX_HINTS_PER_LEVEL` in `GameScreen.kt` is the knob
 to wire up to a rewarded ad later.
 
+## Path animations & the "Need help?" nudge
+
+Two additions on top of the base redesign, both in `GameScreen.kt`:
+
+**Every connection now has motion, not just a fill.** Three `Animatable`s
+drive it — `connectProgress` (a bouncy spring) makes the newest segment
+draw itself in from the previous tile and gives the newly-claimed tile a
+small pop/overshoot; `burstProgress` (a plain tween) expands a fading ring
+outward from that same tile. Both reset and restart on every connection —
+`Animatable.animateTo` cancels whatever was still playing on that same
+instance, so a fast drag across several tiles never queues up stale
+animations, it just always shows the *latest* connection's effect. On top
+of that, a `rememberInfiniteTransition` drives a small light that loops
+continuously along the whole completed stroke, so the path reads as "live"
+even between drags rather than only reacting the instant you touch it.
+
+**"Need help?" is a floating nudge, not a dialog.** If the stroke's length
+hasn't changed for 9 seconds (and hints remain, and the level isn't
+solved), a small card fades/slides in from the bottom of the *screen* —
+deliberately anchored to the whole screen rather than the grid's own Box,
+so it always floats below the board instead of overlapping a small Easy
+grid. It never blocks input to the board underneath. Tapping it calls the
+same `requestHint()` the lightbulb uses; the small × dismisses it, and that
+dismissal sticks until the player's next real move restarts the idle timer
+— it won't reappear just because they kept sitting there after saying no.
+
 ## Stats & Leaderboard
 
 Both now have an entry point (icons on the Home screen top bar, next to

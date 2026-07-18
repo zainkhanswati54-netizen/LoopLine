@@ -1,9 +1,22 @@
 package com.loopline.puzzle.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,9 +29,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
@@ -26,6 +42,7 @@ import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,14 +57,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -69,6 +90,7 @@ import com.loopline.puzzle.ui.theme.LoopLineShapes
 import com.loopline.puzzle.ui.theme.RoseGold
 import com.loopline.puzzle.ui.theme.RoseGoldHighlight
 import com.loopline.puzzle.ui.theme.SurfaceCardElevated
+import com.loopline.puzzle.ui.theme.TextOnMetal
 import com.loopline.puzzle.ui.theme.TextPrimary
 import com.loopline.puzzle.ui.theme.TextSecondary
 import com.loopline.puzzle.ui.theme.TextTertiary
@@ -79,7 +101,9 @@ import com.loopline.puzzle.ui.theme.accentColorFor
 import com.loopline.puzzle.ui.theme.accentDeepFor
 import com.loopline.puzzle.ui.theme.accentHighlightFor
 import com.loopline.puzzle.ui.theme.backgroundBrush
+import com.loopline.puzzle.ui.theme.cardSurfaceBrush
 import com.loopline.puzzle.ui.theme.drawMetallicBevel
+import com.loopline.puzzle.ui.theme.goldBrush
 import com.loopline.puzzle.ui.theme.metallicBevel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -136,6 +160,35 @@ fun GameScreen(
     var completionSeconds by remember(levelId) { mutableStateOf(0) }
     var showDialog by remember(levelId) { mutableStateOf(false) }
 
+    // Per-connection "juice": every time a new tile joins the stroke, these
+    // reset and animate back to their resting value, driving (1) the newest
+    // segment drawing itself in rather than popping into existence, (2) a
+    // small bounce on the tile that just got claimed, and (3) an expanding
+    // ring at that tile. Three different views of one satisfying moment.
+    val connectProgress = remember(levelId) { Animatable(1f) }
+    val burstProgress = remember(levelId) { Animatable(1f) }
+    var justConnectedCell by remember(levelId) { mutableStateOf<Cell?>(null) }
+
+    // A small light that continuously travels along the completed stroke -
+    // ambient motion so the path reads as "alive" even between drags,
+    // rather than only reacting the instant a tile is touched.
+    val flowTransition = rememberInfiniteTransition(label = "pathFlow")
+    val flowPhase by flowTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1600, easing = LinearEasing)
+        ),
+        label = "flowPhase"
+    )
+
+    // A gentle, non-blocking nudge: if the player sits without extending
+    // the stroke for a while, offer the existing Hint feature instead of
+    // leaving them stuck. It never pauses or covers the board - it just
+    // floats at the bottom until they either use it, dismiss it, or move
+    // again (which cancels and restarts the idle timer).
+    var showNeedHelp by remember(levelId) { mutableStateOf(false) }
+
     // Hint state: which cell (if any) to highlight as the suggested next
     // move, whether a solve is currently running in the background, and how
     // many hints have been spent on this particular level.
@@ -182,6 +235,19 @@ fun GameScreen(
         }
     }
 
+    // Restarts every time the stroke's length changes (grows or retracts)
+    // or the level completes - so any real progress hides the banner and
+    // gives the player a fresh 9s window before it's offered again. A
+    // manual dismiss (see the banner's onDismiss) isn't overridden by this
+    // effect, since setting showNeedHelp = false doesn't re-trigger it.
+    LaunchedEffect(levelId, path.size, isComplete) {
+        showNeedHelp = false
+        if (!isComplete && hintsUsed < MAX_HINTS_PER_LEVEL) {
+            delay(9000)
+            if (!isSolvingHint) showNeedHelp = true
+        }
+    }
+
     fun handleTouch(offset: Offset, cellPx: Float, stridePx: Float) {
         if (isComplete) return
         if (offset.x < 0 || offset.y < 0) return
@@ -216,16 +282,35 @@ fun GameScreen(
                 path.add(candidate)
                 hintCell = null
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                justConnectedCell = candidate
+                coroutineScope.launch {
+                    connectProgress.snapTo(0f)
+                    connectProgress.animateTo(
+                        targetValue = 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMedium
+                        )
+                    )
+                }
+                coroutineScope.launch {
+                    burstProgress.snapTo(0f)
+                    burstProgress.animateTo(
+                        targetValue = 1f,
+                        animationSpec = tween(durationMillis = 450, easing = LinearEasing)
+                    )
+                }
             }
             else -> Unit
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(backgroundBrush())
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(backgroundBrush())
+        ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -327,15 +412,27 @@ fun GameScreen(
                         val corner = CornerRadius(cellPx * 0.22f)
                         val inPath = cell in path
                         if (inPath) {
-                            drawRoundRect(brush = accentBrush, topLeft = topLeft, size = cellSize, cornerRadius = corner)
-                            drawMetallicBevel(
-                                topLeft = topLeft,
-                                boxSize = cellSize,
-                                cornerRadiusPx = corner.x,
-                                highlight = Color.White.copy(alpha = 0.4f),
-                                shadow = Color.Black.copy(alpha = 0.3f),
-                                strokeWidthPx = cellPx * 0.045f
-                            )
+                            // The tile that was *just* connected bounces in
+                            // (spring overshoot on connectProgress carries
+                            // it slightly past 1.0 before settling) instead
+                            // of simply appearing filled.
+                            val popScale = if (cell == justConnectedCell) {
+                                0.6f + connectProgress.value * 0.4f
+                            } else {
+                                1f
+                            }
+                            val tileCenter = Offset(topLeft.x + cellPx / 2f, topLeft.y + cellPx / 2f)
+                            scale(scale = popScale, pivot = tileCenter) {
+                                drawRoundRect(brush = accentBrush, topLeft = topLeft, size = cellSize, cornerRadius = corner)
+                                drawMetallicBevel(
+                                    topLeft = topLeft,
+                                    boxSize = cellSize,
+                                    cornerRadiusPx = corner.x,
+                                    highlight = Color.White.copy(alpha = 0.4f),
+                                    shadow = Color.Black.copy(alpha = 0.3f),
+                                    strokeWidthPx = cellPx * 0.045f
+                                )
+                            }
                         } else {
                             drawRoundRect(color = TileIdle, topLeft = topLeft, size = cellSize, cornerRadius = corner)
                             drawMetallicBevel(
@@ -364,6 +461,16 @@ fun GameScreen(
                             val b = path[i + 1]
                             val centerA = Offset(a.col * stridePx + cellPx / 2f, a.row * stridePx + cellPx / 2f)
                             val centerB = Offset(b.col * stridePx + cellPx / 2f, b.row * stridePx + cellPx / 2f)
+                            // The newest segment draws itself in from the
+                            // previous tile toward the new one rather than
+                            // appearing instantly - a fluid "connect"
+                            // rather than a static fill.
+                            val isNewestSegment = i == path.size - 2
+                            val drawnEnd = if (isNewestSegment) {
+                                lerp(centerA, centerB, connectProgress.value.coerceIn(0f, 1f))
+                            } else {
+                                centerB
+                            }
                             // Three-layer stroke - a darker under-edge, the
                             // core accent, and a thin bright sheen on top -
                             // reads as a polished metal rod rather than a
@@ -372,23 +479,61 @@ fun GameScreen(
                             drawLine(
                                 color = accentDeep,
                                 start = centerA,
-                                end = centerB,
+                                end = drawnEnd,
                                 strokeWidth = cellPx * 0.18f,
                                 cap = StrokeCap.Round
                             )
                             drawLine(
                                 color = accent,
                                 start = centerA,
-                                end = centerB,
+                                end = drawnEnd,
                                 strokeWidth = cellPx * 0.14f,
                                 cap = StrokeCap.Round
                             )
                             drawLine(
                                 color = accentHighlight.copy(alpha = 0.6f),
                                 start = centerA,
-                                end = centerB,
+                                end = drawnEnd,
                                 strokeWidth = cellPx * 0.05f,
                                 cap = StrokeCap.Round
+                            )
+                        }
+
+                        // A small light traveling endlessly along the
+                        // completed stroke - since every step is exactly
+                        // one grid stride, each segment can be treated as
+                        // equal-length for the purposes of placing it.
+                        if (!isComplete) {
+                            val segCount = path.size - 1
+                            val scaledT = flowPhase * segCount
+                            val segIndex = scaledT.toInt().coerceIn(0, segCount - 1)
+                            val localT = (scaledT - segIndex).coerceIn(0f, 1f)
+                            val sa = path[segIndex]
+                            val sb = path[segIndex + 1]
+                            val sparkCenter = lerp(
+                                Offset(sa.col * stridePx + cellPx / 2f, sa.row * stridePx + cellPx / 2f),
+                                Offset(sb.col * stridePx + cellPx / 2f, sb.row * stridePx + cellPx / 2f),
+                                localT
+                            )
+                            drawCircle(color = accentHighlight.copy(alpha = 0.35f), radius = cellPx * 0.16f, center = sparkCenter)
+                            drawCircle(color = Color.White.copy(alpha = 0.9f), radius = cellPx * 0.07f, center = sparkCenter)
+                        }
+                    }
+
+                    // The expanding, fading ring left behind by the most
+                    // recent connection - a quick ripple rather than the
+                    // ambient spark above, which loops continuously.
+                    justConnectedCell?.let { jc ->
+                        if (burstProgress.value < 1f) {
+                            val burstCenter = Offset(
+                                jc.col * stridePx + cellPx / 2f,
+                                jc.row * stridePx + cellPx / 2f
+                            )
+                            drawCircle(
+                                color = accentHighlight.copy(alpha = (1f - burstProgress.value) * 0.55f),
+                                radius = cellPx * (0.32f + burstProgress.value * 0.5f),
+                                center = burstCenter,
+                                style = Stroke(width = cellPx * 0.05f)
                             )
                         }
                     }
@@ -418,6 +563,24 @@ fun GameScreen(
                 }
             }
         }
+        }
+
+        AnimatedVisibility(
+            visible = showNeedHelp,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 28.dp)
+        ) {
+            NeedHelpBanner(
+                onUseHint = {
+                    showNeedHelp = false
+                    requestHint()
+                },
+                onDismiss = { showNeedHelp = false }
+            )
+        }
     }
 
     if (showDialog) {
@@ -438,6 +601,67 @@ private fun starsFor(seconds: Int, cellCount: Int): Int = when {
     seconds <= cellCount * 1.2 -> 3
     seconds <= cellCount * 2.5 -> 2
     else -> 1
+}
+
+/**
+ * A floating, dismissible nudge - not a dialog. It never blocks the grid
+ * or demands a choice before continuing; tapping it uses a hint the same
+ * way the header's lightbulb does, and the small X lets the player wave
+ * it off without any penalty or follow-up.
+ */
+@Composable
+private fun NeedHelpBanner(
+    onUseHint: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .widthIn(max = 320.dp)
+            .shadow(
+                elevation = 14.dp,
+                shape = LoopLineShapes.card,
+                ambientColor = Gold.copy(alpha = 0.3f),
+                spotColor = Gold.copy(alpha = 0.35f)
+            )
+            .clip(LoopLineShapes.card)
+            .background(cardSurfaceBrush())
+            .border(width = 1.dp, color = Gold.copy(alpha = 0.3f), shape = LoopLineShapes.card)
+            .clickable(onClick = onUseHint)
+            .padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(goldBrush()),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Lightbulb,
+                contentDescription = null,
+                tint = TextOnMetal,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Need help?", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+            Text(
+                "Tap for a hint on your next move",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary
+            )
+        }
+        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = "Dismiss",
+                tint = TextSecondary,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
 }
 
 /** A confetti particle: where it flies to, what color, and whether it's
