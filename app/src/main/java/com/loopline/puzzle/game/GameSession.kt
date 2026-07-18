@@ -72,9 +72,8 @@ object GameSession {
     fun lookup(id: Int): Level? = cache[id]
 
     private fun generateAndStore(target: Difficulty, levelNumber: Int): Level {
-        val config = target.scaledConfig(levelNumber)
         val accentKey = accentCycle[(levelNumber - 1).mod(accentCycle.size)]
-        val generated = LevelGenerator.generate(config, levelNumber, accentKey)
+        val generated = LevelGenerator.generate(target, levelNumber, accentKey)
         idCounter += 1
         val stored = generated.copy(id = idCounter)
         cache[stored.id] = stored

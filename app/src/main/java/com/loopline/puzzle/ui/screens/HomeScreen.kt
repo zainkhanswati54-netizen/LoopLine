@@ -56,9 +56,9 @@ data class GameMode(
 
 private val modes = listOf(
     GameMode("Classic", "Connect every tile in one stroke", Icons.Filled.GridOn, "gold", available = true),
-    GameMode("Daily Puzzle", "A fresh challenge every day", Icons.Filled.CalendarToday, "copper"),
-    GameMode("Timed", "Beat the clock", Icons.Filled.Timer, "rosegold"),
-    GameMode("Zen", "No timer, no pressure", Icons.Filled.SelfImprovement, "gold"),
+    GameMode("Zen", "No timer, no pressure", Icons.Filled.SelfImprovement, "rosegold"),
+    GameMode("Timed", "Beat the clock", Icons.Filled.Timer, "copper"),
+    GameMode("Daily Puzzle", "A fresh challenge every day", Icons.Filled.CalendarToday, "gold"),
 )
 
 @Composable

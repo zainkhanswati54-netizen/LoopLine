@@ -51,6 +51,37 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 - Completing a level plays a quick confetti burst, then a dialog with a **star rating** (based on solve time relative to puzzle size), **Next level** (fresh puzzle, same difficulty, slightly bigger every 5 levels), or **Change difficulty**.
 - Play is endless — no fixed level count.
 
+## Recent fixes (this update)
+
+- **Brand logo swapped in.** `LoopLineLogo` (Splash + Home) now renders the
+  ornate gold circular badge image (`res/drawable-nodpi/loopline_logo.jpg`)
+  instead of the old Canvas-drawn mark. The app launcher icon is untouched
+  for now (it's a vector adaptive icon with its own safe-zone rules) - ask
+  if you want that swapped too.
+- **Sound + vibration on every stroke move.** `SoundPlayer` (a small
+  SoundPool wrapper around `res/raw/tile_connect.mp3`) plays a soft pop each
+  time the stroke connects a new tile, and a quieter version when backing
+  up - alongside the haptic tick that already fired forward, now mirrored
+  on backward moves too.
+- **Difficulty now actually climbs level by level.** The generator used to
+  pick a cell count anywhere in a difficulty's whole min-max range at
+  random, so Level 1 could land harder than Level 4 by pure chance.
+  `Difficulty.targetCellCount()` now gives each level a specific target that
+  rises smoothly across every 5-level bucket (easiest at the start of the
+  bucket, hardest at the end), and the generator picks whichever attempt
+  lands closest to it.
+- **No more lopsided empty gap next to the puzzle.** Generated levels are
+  now cropped to the random walk's own bounding box instead of being placed
+  inside the full difficulty-sized grid - so a puzzle that doesn't happen to
+  reach every edge of that grid no longer leaves a dead strip of empty
+  columns/rows hugging one side. The board now just sits centered on its
+  own footprint.
+- **Daily Puzzle moved out of the top-priority slot.** It sat right beside
+  the one playable mode (Classic) at the top of the grid, which overstated
+  how ready it was. Reordered so Classic leads and the still-"Coming soon"
+  Daily Puzzle drops to the last card - closer to how NumRush treats
+  not-yet-built modes as lower priority than what's actually playable.
+
 ## Recent fixes (from testing feedback)
 
 - **Grid no longer overflows the screen on Hard.** Tile size is now computed

@@ -49,6 +49,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -82,6 +83,7 @@ import com.loopline.puzzle.game.GameSession
 import com.loopline.puzzle.game.LevelRepository
 import com.loopline.puzzle.game.PathSolver
 import com.loopline.puzzle.game.ProgressStore
+import com.loopline.puzzle.game.SoundPlayer
 import com.loopline.puzzle.ui.components.IconChipButton
 import com.loopline.puzzle.ui.components.MetallicButton
 import com.loopline.puzzle.ui.theme.Copper
@@ -150,6 +152,14 @@ fun GameScreen(
             Text("Level not found", color = TextPrimary)
         }
         return
+    }
+
+    // One SoundPool-backed player per time this screen is on screen - loaded
+    // once up front so the very first connect has no playback lag, and
+    // released when the player navigates away so the pool doesn't leak.
+    val soundPlayer = remember { SoundPlayer.create(context) }
+    DisposableEffect(Unit) {
+        onDispose { soundPlayer.release() }
     }
 
     val path = remember(levelId) { mutableStateListOf(level.start) }
@@ -309,15 +319,21 @@ fun GameScreen(
         when {
             candidate == path.last() -> Unit
             existingIndex != -1 -> {
+                val stepsBack = path.size - (existingIndex + 1)
                 while (path.size > existingIndex + 1) {
                     path.removeAt(path.lastIndex)
                 }
                 hintCell = null
+                if (stepsBack > 0) {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    soundPlayer.playRetract()
+                }
             }
             candidate.isAdjacentTo(path.last()) -> {
                 path.add(candidate)
                 hintCell = null
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                soundPlayer.playConnect()
                 justConnectedCell = candidate
                 coroutineScope.launch {
                     connectProgress.snapTo(0f)

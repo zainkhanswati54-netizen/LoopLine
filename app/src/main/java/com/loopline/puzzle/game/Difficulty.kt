@@ -38,4 +38,25 @@ enum class Difficulty(val label: String, val description: String, val config: Gr
 
         return GridConfig(rows, cols, minCells, maxCells)
     }
+
+    /**
+     * Where, within this level's [scaledConfig] cell-count range, a given
+     * [levelNumber] should land - so difficulty climbs level-by-level instead
+     * of landing anywhere in the range at random.
+     *
+     * Every group of 5 levels is one "bucket" (the same bucket [scaledConfig]
+     * uses to grow the grid): level 1 of a bucket targets the bucket's easiest
+     * (minCells) puzzle, and each level after it steps evenly up to the
+     * bucket's hardest (maxCells) by the 5th level. The next bucket then grows
+     * the grid itself and starts its own climb - so difficulty is a
+     * repeating "climb, then step up a size" wave rather than a flat
+     * plateau or a random shuffle within it.
+     */
+    fun targetCellCount(levelNumber: Int): Int {
+        val cfg = scaledConfig(levelNumber)
+        val levelInBucket = (levelNumber - 1) % 5 // 0..4
+        val progress = levelInBucket / 4f
+        return (cfg.minCells + (cfg.maxCells - cfg.minCells) * progress).toInt()
+            .coerceIn(cfg.minCells, cfg.maxCells)
+    }
 }
