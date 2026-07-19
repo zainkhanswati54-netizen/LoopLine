@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Leaderboard
 import androidx.compose.material.icons.filled.Settings
@@ -37,6 +36,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.loopline.puzzle.ui.components.ComingSoonDialog
+import com.loopline.puzzle.ui.components.DailyChallengeBanner
 import com.loopline.puzzle.ui.components.FeaturedModeBanner
 import com.loopline.puzzle.ui.components.GradientText
 import com.loopline.puzzle.ui.components.IconChipButton
@@ -60,14 +60,17 @@ private val featuredMode = GameMode("Classic", "Connect every tile in one stroke
 private val secondaryModes = listOf(
     GameMode("Zen", "No timer, no pressure", Icons.Filled.Spa, "rosegold"),
     GameMode("Timed", "Beat the clock", Icons.Filled.Timer, "copper"),
-    GameMode("Daily Puzzle", "A fresh challenge every day", Icons.Filled.CalendarToday, "gold"),
 )
 
 @Composable
-fun HomeScreen(onPlayClassic: () -> Unit) {
+fun HomeScreen(
+    onPlayClassic: () -> Unit,
+    onPlayDaily: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenStatistics: () -> Unit,
+    onOpenLeaderboard: () -> Unit
+) {
     var showComingSoon by remember { mutableStateOf(false) }
-    var showStatsComingSoon by remember { mutableStateOf(false) }
-    var showLeaderboardComingSoon by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -97,18 +100,23 @@ fun HomeScreen(onPlayClassic: () -> Unit) {
                         color = TextSecondary
                     )
                 }
-                IconChipButton(icon = Icons.Filled.BarChart, contentDescription = "Stats") {
-                    showStatsComingSoon = true
-                }
-                IconChipButton(icon = Icons.Filled.Leaderboard, contentDescription = "Leaderboard") {
-                    showLeaderboardComingSoon = true
-                }
-                IconChipButton(icon = Icons.Filled.Settings, contentDescription = "Settings") {
-                    showComingSoon = true
-                }
+                IconChipButton(icon = Icons.Filled.BarChart, contentDescription = "Stats", onClick = onOpenStatistics)
+                IconChipButton(icon = Icons.Filled.Leaderboard, contentDescription = "Leaderboard", onClick = onOpenLeaderboard)
+                IconChipButton(icon = Icons.Filled.Settings, contentDescription = "Settings", onClick = onOpenSettings)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            // Daily Challenge sits above Classic on purpose - it's the one
+            // thing that's actually live and time-sensitive (a fresh puzzle
+            // every 24h, with a streak on the line), so it earns the top
+            // slot over the evergreen endless mode beneath it.
+            DailyChallengeBanner(
+                onClick = onPlayDaily,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             FeaturedModeBanner(
                 title = featuredMode.title,
@@ -151,20 +159,6 @@ fun HomeScreen(onPlayClassic: () -> Unit) {
 
         if (showComingSoon) {
             ComingSoonDialog(onDismiss = { showComingSoon = false })
-        }
-        if (showStatsComingSoon) {
-            ComingSoonDialog(
-                onDismiss = { showStatsComingSoon = false },
-                title = "Stats \u2014 coming soon",
-                message = "Levels cleared, best times, and streaks per difficulty are on the way."
-            )
-        }
-        if (showLeaderboardComingSoon) {
-            ComingSoonDialog(
-                onDismiss = { showLeaderboardComingSoon = false },
-                title = "Leaderboard \u2014 coming soon",
-                message = "See how your best levels stack up against other players. Coming soon!"
-            )
         }
     }
 }

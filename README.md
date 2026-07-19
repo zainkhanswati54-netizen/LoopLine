@@ -58,6 +58,39 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 
 ## Recent fixes (this update)
 
+- **"Next level" double-tap no longer skips a level.** A fast double-tap
+  fired the callback twice before navigation away from GameScreen could
+  take effect, and each call advanced `GameSession` by one real level. The
+  dialog now dismisses immediately on the first tap and an `isAdvancingLevel`
+  guard blocks any repeat.
+- **The game actually pauses when the app leaves the foreground.** A
+  `LifecycleEventObserver` on `ON_STOP` now sets `isPaused = true` and
+  flushes progress to disk - previously only the in-app Pause Menu paused
+  the clock, so switching apps or locking the screen let the timer (and,
+  for the Daily Challenge, nothing else) run on unseen.
+- **Progress now survives an actual app restart, not just in-app
+  navigation.** `GameSession` used to be pure in-memory state - force-close
+  the app and every difficulty's in-progress session (which level, the
+  stroke so far, elapsed time, hints used) was gone, even though the
+  separate best-level record remembered you'd gone further. `ProgressStore`
+  now persists the full session per difficulty (shape, path, timer, hints)
+  and `GameSession.hydrate()` rebuilds it from disk on first touch each
+  process - wired in from `MainActivity.onCreate`.
+- **Daily Challenge is live.** Renamed from "Daily Puzzle", moved above
+  Classic on Home (it's the one time-sensitive, live thing), and actually
+  works now: one deterministic puzzle per calendar day (same for everyone,
+  seeded from the date - see `LevelGenerator.generateDaily`), a live
+  "resets in HH:MM:SS" countdown, a day streak, and a 7-day calendar strip
+  (`DailyChallengeStore`, `DailyChallengeBanner`).
+- **Settings, Statistics, and Leaderboard are real screens now**, not
+  "coming soon" dialogs - sound/vibration toggles and a confirmed full
+  reset; per-difficulty best level, fastest solve, lifetime levels
+  completed/hints used, and the daily streak; and a "your best runs" board
+  (see the honesty note in `LeaderboardScreen.kt` for why it's personal
+  bests, not fabricated other-player scores).
+
+## Recent fixes (this update, previous round)
+
 - **App launcher icon now uses the same gold logo.** The adaptive icon
   (`mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml`) now
   points both its background and foreground layers at the bundled logo
@@ -185,13 +218,21 @@ same `requestHint()` the lightbulb uses; the small × dismisses it, and that
 dismissal sticks until the player's next real move restarts the idle timer
 — it won't reappear just because they kept sitting there after saying no.
 
-## Stats & Leaderboard
+## Settings, Statistics & Leaderboard
 
-Both now have an entry point (icons on the Home screen top bar, next to
-Settings) that opens a "Coming soon" dialog explaining what's planned —
-levels cleared / best times / streaks for Stats, and a ranked comparison
-against other players for Leaderboard. Neither collects or sends any data
-yet; they're placeholders so the UI is in place ahead of the real screens.
+All three are real screens now (`SettingsScreen.kt`, `StatisticsScreen.kt`,
+`LeaderboardScreen.kt`), opened from the icons on the Home screen top bar.
+
+- **Settings** - sound and vibration toggles (`SettingsStore`), and a
+  confirmed "reset everything" action that clears best levels, in-progress
+  sessions, lifetime stats, and the Daily Challenge streak.
+- **Statistics** - lifetime levels completed and hints used, current/best
+  Daily Challenge streak, and per-difficulty best level + fastest solve.
+- **Leaderboard** - deliberately framed as "your best runs," not a ranked
+  comparison against other players. There's no server behind this app, so
+  there's no honest way to show real other-player scores here - faking
+  them would be misleading. If online leaderboards get built later
+  (needs a backend), this is the screen to extend.
 
 ## How level generation works (and why it's always solvable)
 

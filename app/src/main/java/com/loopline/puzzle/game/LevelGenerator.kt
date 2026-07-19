@@ -23,14 +23,33 @@ object LevelGenerator {
     fun generate(difficulty: Difficulty, levelNumber: Int, accentKey: String, attempts: Int = 300): Level {
         val config = difficulty.scaledConfig(levelNumber)
         val rnd = Random(System.nanoTime() xor levelNumber.toLong())
-
-        // Target a specific cell count for this exact level (see
-        // Difficulty.targetCellCount) instead of just landing anywhere in
-        // the bucket's min..max range - that's what makes level 1 reliably
-        // easier than level 4 of the same bucket instead of the two being
-        // randomly interchangeable in size.
         val target = difficulty.targetCellCount(levelNumber)
+        return generateCore(config, rnd, target, "Level $levelNumber", accentKey, attempts)
+    }
 
+    /**
+     * The Daily Challenge's puzzle: deterministic from [seed] (the calendar
+     * date, as an epoch-day long) so every player gets the exact same
+     * layout on a given day, and it stays identical if they revisit it
+     * later that same day. Uses Normal's grid size, fixed (not scaled by a
+     * level number, since there's no level progression here - just today's
+     * one puzzle).
+     */
+    fun generateDaily(seed: Long, accentKey: String = "gold", attempts: Int = 300): Level {
+        val config = Difficulty.NORMAL.config
+        val rnd = Random(seed)
+        val target = (config.minCells + config.maxCells) / 2
+        return generateCore(config, rnd, target, "Daily Challenge", accentKey, attempts)
+    }
+
+    private fun generateCore(
+        config: GridConfig,
+        rnd: Random,
+        target: Int,
+        title: String,
+        accentKey: String,
+        attempts: Int
+    ): Level {
         var best: List<Cell> = emptyList()
         var bestDistance = Int.MAX_VALUE
         for (i in 0 until attempts) {
@@ -65,7 +84,7 @@ object LevelGenerator {
 
         return Level(
             id = 0,
-            title = "Level $levelNumber",
+            title = title,
             rows = maxRow - minRow + 1,
             cols = maxCol - minCol + 1,
             cells = cropped.toSet(),

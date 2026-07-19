@@ -77,12 +77,18 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.loopline.puzzle.game.Cell
+import com.loopline.puzzle.game.DAILY_CHALLENGE_LEVEL_ID
+import com.loopline.puzzle.game.DailyChallengeStore
 import com.loopline.puzzle.game.GameSession
 import com.loopline.puzzle.game.LevelRepository
 import com.loopline.puzzle.game.PathSolver
 import com.loopline.puzzle.game.ProgressStore
+import com.loopline.puzzle.game.SettingsStore
 import com.loopline.puzzle.game.SoundPlayer
 import com.loopline.puzzle.ui.components.IconChipButton
 import com.loopline.puzzle.ui.components.MetallicButton
@@ -143,6 +149,7 @@ fun GameScreen(
     // shows a blank screen.
     val sessionLevel = remember(levelId) { GameSession.lookup(levelId) }
     val level = sessionLevel ?: LevelRepository.byId(levelId)
+    val isDailyChallenge = levelId == DAILY_CHALLENGE_LEVEL_ID
 
     if (level == null) {
         Box(
@@ -162,16 +169,29 @@ fun GameScreen(
         onDispose { soundPlayer.release() }
     }
 
-    val path = remember(levelId) { mutableStateListOf(level.start) }
+    // If GameSession reconstructed this exact level from a persisted
+    // session (app was restarted mid-puzzle), this carries the stroke,
+    // timer, and hint count the player actually left off at - consumed
+    // once so navigating onward to a genuinely fresh level doesn't
+    // reapply it.
+    val restored = remember(levelId) { GameSession.consumeRestoredProgress(levelId) }
+
+    val path = remember(levelId) {
+        mutableStateListOf<Cell>().apply {
+            val restoredPath = restored?.path?.filter { it in level.cells }
+            if (!restoredPath.isNullOrEmpty()) addAll(restoredPath) else add(level.start)
+        }
+    }
     val isComplete by remember(levelId) { derivedStateOf { path.size == level.cellCount } }
     val accent = remember(level.accentKey) { accentColorFor(level.accentKey) }
     val accentBrush = remember(level.accentKey) { accentBrushFor(level.accentKey) }
     val accentHighlight = remember(level.accentKey) { accentHighlightFor(level.accentKey) }
     val accentDeep = remember(level.accentKey) { accentDeepFor(level.accentKey) }
 
-    var elapsedSeconds by remember(levelId) { mutableStateOf(0) }
+    var elapsedSeconds by remember(levelId) { mutableStateOf(restored?.elapsedSeconds ?: 0) }
     var completionSeconds by remember(levelId) { mutableStateOf(0) }
     var showDialog by remember(levelId) { mutableStateOf(false) }
+    var isAdvancingLevel by remember(levelId) { mutableStateOf(false) }
 
     // Pausing freezes the clock (checked in the timer LaunchedEffect below)
     // and, because the Pause Menu is a real Dialog, also blocks every touch
@@ -227,8 +247,30 @@ fun GameScreen(
     // many hints have been spent on this particular level.
     var hintCell by remember(levelId) { mutableStateOf<Cell?>(null) }
     var isSolvingHint by remember(levelId) { mutableStateOf(false) }
-    var hintsUsed by remember(levelId) { mutableStateOf(0) }
+    var hintsUsed by remember(levelId) { mutableStateOf(restored?.hintsUsed ?: 0) }
     val coroutineScope = rememberCoroutineScope()
+
+    // Whenever the app itself goes to the background (home button, app
+    // switcher, screen lock) - not just our own in-app Pause Menu - the
+    // clock now actually stops instead of ticking away unseen, and whatever
+    // progress exists so far is flushed to disk immediately. Bug this
+    // fixes: the timer only ever checked the in-app `isPaused` flag, which
+    // had no idea the app had left the foreground, so a level "played" for
+    // 5 real seconds could read as several minutes solved after switching
+    // away and back.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                isPaused = true
+                if (!isDailyChallenge) {
+                    GameSession.saveProgress(context, path.toList(), elapsedSeconds, hintsUsed)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     fun requestHint() {
         if (isComplete || isSolvingHint || hintsUsed >= MAX_HINTS_PER_LEVEL) return
@@ -244,6 +286,10 @@ fun GameScreen(
             val next = solution?.firstOrNull() ?: return@launch
             hintCell = next
             hintsUsed += 1
+            if (!isDailyChallenge) {
+                ProgressStore.recordHintUsed(context)
+                GameSession.saveProgress(context, path.toList(), elapsedSeconds, hintsUsed)
+            }
         }
     }
 
@@ -258,10 +304,16 @@ fun GameScreen(
     LaunchedEffect(isComplete) {
         if (isComplete) {
             completionSeconds = elapsedSeconds
-            if (sessionLevel != null) {
+            if (isDailyChallenge) {
+                DailyChallengeStore.recordCompletion(context, completionSeconds)
+            } else if (sessionLevel != null) {
                 ProgressStore.recordLevelReached(context, GameSession.difficulty, GameSession.levelNumber)
+                ProgressStore.recordLevelCompletion(context)
+                ProgressStore.recordSolveTime(context, GameSession.difficulty, completionSeconds)
             }
-            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (SettingsStore.vibrationEnabled(context)) {
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
             delay(650) // let the confetti play before the dialog covers it
             showDialog = true
         } else {
@@ -317,8 +369,15 @@ fun GameScreen(
             candidate.isAdjacentTo(path.last()) -> {
                 path.add(candidate)
                 hintCell = null
-                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                soundPlayer.playConnect()
+                if (SettingsStore.vibrationEnabled(context)) {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                }
+                if (SettingsStore.soundEnabled(context)) {
+                    soundPlayer.playConnect()
+                }
+                if (!isDailyChallenge) {
+                    GameSession.saveProgress(context, path.toList(), elapsedSeconds, hintsUsed)
+                }
                 justConnectedCell = candidate
                 coroutineScope.launch {
                     connectProgress.snapTo(0f)
@@ -376,7 +435,11 @@ fun GameScreen(
                     color = TextPrimary
                 )
                 Text(
-                    text = if (sessionLevel != null) GameSession.difficulty.label else "Preview",
+                    text = when {
+                        isDailyChallenge -> "Today's puzzle"
+                        sessionLevel != null -> GameSession.difficulty.label
+                        else -> "Preview"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary
                 )
@@ -649,10 +712,26 @@ fun GameScreen(
             stars = starsFor(completionSeconds, level.cellCount),
             elapsedSeconds = completionSeconds,
             accentKey = level.accentKey,
+            isDailyChallenge = isDailyChallenge,
+            streak = if (isDailyChallenge) DailyChallengeStore.currentStreak(context) else 0,
             onLevelSelect = onBack,
             onNext = {
-                val nextLevel = GameSession.next()
-                onNavigateToLevel(nextLevel.id)
+                if (isDailyChallenge) {
+                    showDialog = false
+                    onBack()
+                } else if (!isAdvancingLevel) {
+                    // Bug this fixes: a fast double-tap on "Next level" used to
+                    // fire this callback twice before the navigation away from
+                    // this screen could take effect, and each call advanced
+                    // GameSession by one real level - so two taps could skip a
+                    // whole level. Dismissing the dialog immediately removes
+                    // the button from the screen, and the flag is an extra
+                    // guard for the one frame where it might still be tappable.
+                    isAdvancingLevel = true
+                    showDialog = false
+                    val nextLevel = GameSession.next(context)
+                    onNavigateToLevel(nextLevel.id)
+                }
             }
         )
     }
@@ -867,6 +946,8 @@ private fun LevelCompleteDialog(
     stars: Int,
     elapsedSeconds: Int,
     accentKey: String,
+    isDailyChallenge: Boolean = false,
+    streak: Int = 0,
     onLevelSelect: () -> Unit,
     onNext: () -> Unit
 ) {
@@ -877,7 +958,7 @@ private fun LevelCompleteDialog(
         modifier = Modifier.metallicBevel(cornerDp = LoopLineShapes.dialogCornerDp),
         title = {
             Text(
-                "Level complete!",
+                if (isDailyChallenge) "Daily Challenge complete!" else "Level complete!",
                 style = MaterialTheme.typography.headlineMedium,
                 color = TextPrimary
             )
@@ -899,14 +980,28 @@ private fun LevelCompleteDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary
                 )
+                if (isDailyChallenge) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        if (streak > 1) "\ud83d\udd25 $streak day streak \u2014 come back tomorrow for the next one" else "Come back tomorrow for the next one",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                }
             }
         },
         confirmButton = {
-            MetallicButton(text = "Next level", onClick = onNext, accentKey = accentKey)
+            MetallicButton(
+                text = if (isDailyChallenge) "Back to Home" else "Next level",
+                onClick = onNext,
+                accentKey = accentKey
+            )
         },
         dismissButton = {
-            TextButton(onClick = onLevelSelect) {
-                Text("Change difficulty", color = TextSecondary)
+            if (!isDailyChallenge) {
+                TextButton(onClick = onLevelSelect) {
+                    Text("Change difficulty", color = TextSecondary)
+                }
             }
         }
     )
