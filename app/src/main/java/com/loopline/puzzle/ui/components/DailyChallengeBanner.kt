@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.loopline.puzzle.game.DailyChallengeStore
@@ -161,7 +162,7 @@ fun DailyChallengeBanner(onClick: () -> Unit, modifier: Modifier = Modifier) {
                         modifier = Modifier
                             .size(22.dp)
                             .clip(CircleShape)
-                            .background(if (done) accentBrush else Color.White.copy(alpha = 0.06f)),
+                            .background(if (done) accentBrush else SolidColor(Color.White.copy(alpha = 0.06f))),
                         contentAlignment = Alignment.Center
                     ) {
                         if (done) {
