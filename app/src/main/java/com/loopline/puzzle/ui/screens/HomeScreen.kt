@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Leaderboard
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Spa
@@ -30,15 +31,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.loopline.puzzle.game.SettingsStore
 import com.loopline.puzzle.ui.components.ComingSoonDialog
 import com.loopline.puzzle.ui.components.DailyChallengeBanner
 import com.loopline.puzzle.ui.components.FeaturedModeBanner
 import com.loopline.puzzle.ui.components.GradientText
+import com.loopline.puzzle.ui.components.HowToPlayOverlay
+import com.loopline.puzzle.ui.components.IconChipButton
 import com.loopline.puzzle.ui.components.LoopLineLogo
 import com.loopline.puzzle.ui.components.ModeCard
 import com.loopline.puzzle.ui.components.ShineText
@@ -107,6 +112,12 @@ fun HomeScreen(
     // serve every disabled card instead of needing a flag per card.
     var comingSoonTitle by remember { mutableStateOf<String?>(null) }
 
+    // Shown automatically the very first time Home loads for a player
+    // (persisted via SettingsStore so it never nags again after that),
+    // and reopenable any time via the "?" chip next to the logo.
+    val context = LocalContext.current
+    var showHowToPlay by remember { mutableStateOf(!SettingsStore.hasSeenTutorial(context)) }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -135,6 +146,11 @@ fun HomeScreen(
                         color = TextSecondary
                     )
                 }
+                IconChipButton(
+                    icon = Icons.Filled.HelpOutline,
+                    contentDescription = "How to play",
+                    onClick = { showHowToPlay = true }
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -200,6 +216,15 @@ fun HomeScreen(
                 onDismiss = { comingSoonTitle = null },
                 title = "$title \u2014 coming soon",
                 message = "$title is still being polished. Stay tuned!"
+            )
+        }
+
+        if (showHowToPlay) {
+            HowToPlayOverlay(
+                onDismiss = {
+                    showHowToPlay = false
+                    SettingsStore.setHasSeenTutorial(context, true)
+                }
             )
         }
     }

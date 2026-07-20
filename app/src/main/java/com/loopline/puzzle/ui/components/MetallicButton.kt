@@ -13,7 +13,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.loopline.puzzle.game.UiSoundPlayer
 import com.loopline.puzzle.ui.theme.LoopLineShapes
 import com.loopline.puzzle.ui.theme.TextOnMetal
 import com.loopline.puzzle.ui.theme.TextTertiary
@@ -25,6 +27,11 @@ import com.loopline.puzzle.ui.theme.metallicBevel
  * The app's one primary-button treatment: a brushed-metal gradient fill,
  * softly rounded corners, and a shadow tinted with the same accent so the
  * button looks lit by its own metal rather than a generic drop shadow.
+ *
+ * Every tap plays the shared [UiSoundPlayer] click by default - set
+ * [playTapSound] to false for the rare button that plays its own distinct
+ * cue instead (e.g. GameScreen's Restart uses a paper-rip sound, not the
+ * generic tap).
  */
 @Composable
 fun MetallicButton(
@@ -32,9 +39,11 @@ fun MetallicButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     accentKey: String = "gold",
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    playTapSound: Boolean = true
 ) {
     val accentColor = accentColorFor(accentKey)
+    val context = LocalContext.current
     val fillBrush: Brush = if (enabled) {
         accentBrushFor(accentKey)
     } else {
@@ -52,7 +61,16 @@ fun MetallicButton(
             .clip(LoopLineShapes.button)
             .background(fillBrush)
             .metallicBevel(cornerDp = LoopLineShapes.buttonCornerDp)
-            .let { if (enabled) it.clickable(onClick = onClick) else it }
+            .let {
+                if (enabled) {
+                    it.clickable(onClick = {
+                        if (playTapSound) UiSoundPlayer.playTap(context)
+                        onClick()
+                    })
+                } else {
+                    it
+                }
+            }
             .padding(horizontal = 24.dp, vertical = 13.dp),
         contentAlignment = Alignment.Center
     ) {

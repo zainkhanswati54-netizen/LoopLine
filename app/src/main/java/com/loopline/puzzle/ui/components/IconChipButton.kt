@@ -10,7 +10,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.loopline.puzzle.game.UiSoundPlayer
 import com.loopline.puzzle.ui.theme.TextPrimary
 import com.loopline.puzzle.ui.theme.TextSecondary
 
@@ -18,6 +20,9 @@ import com.loopline.puzzle.ui.theme.TextSecondary
  * A quiet circular chip around an icon — used for the back arrow and
  * header utility icons so tap targets read as one deliberate family
  * instead of bare Material icons floating on the background.
+ *
+ * Plays the shared [UiSoundPlayer] tap by default; pass [playTapSound] =
+ * false for a chip that plays its own distinct cue elsewhere instead.
  */
 @Composable
 fun IconChipButton(
@@ -27,10 +32,15 @@ fun IconChipButton(
     tint: Color = TextSecondary,
     prominent: Boolean = false,
     enabled: Boolean = true,
+    playTapSound: Boolean = true,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
     IconButton(
-        onClick = onClick,
+        onClick = {
+            if (playTapSound) UiSoundPlayer.playTap(context)
+            onClick()
+        },
         enabled = enabled,
         modifier = modifier
             .size(40.dp)

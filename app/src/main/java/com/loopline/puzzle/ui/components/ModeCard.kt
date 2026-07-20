@@ -29,7 +29,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.loopline.puzzle.game.UiSoundPlayer
 import com.loopline.puzzle.ui.theme.LoopLineShapes
 import com.loopline.puzzle.ui.theme.TextOnMetal
 import com.loopline.puzzle.ui.theme.TextPrimary
@@ -56,6 +58,7 @@ fun ModeCard(
 ) {
     val accentColor = accentColorFor(accentKey)
     val accentBrush = accentBrushFor(accentKey)
+    val context = LocalContext.current
 
     // A slow, subtle breathing pulse - scale and glow tick to the same
     // phase - so the one truly playable card reads as tappable and alive.
@@ -90,7 +93,10 @@ fun ModeCard(
             .clip(LoopLineShapes.card)
             .background(cardSurfaceBrush())
             .metallicBevel(cornerDp = LoopLineShapes.cardCornerDp)
-            .clickable(onClick = onClick)
+            .clickable(onClick = {
+                UiSoundPlayer.playTap(context)
+                onClick()
+            })
             .padding(18.dp)
             .height(158.dp)
     ) {

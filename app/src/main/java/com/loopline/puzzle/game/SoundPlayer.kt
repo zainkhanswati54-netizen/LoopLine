@@ -26,7 +26,9 @@ import com.loopline.puzzle.R
 class SoundPlayer private constructor(
     private val pool: SoundPool,
     private val connectSoundId: Int,
-    private val successSoundId: Int
+    private val successSoundId: Int,
+    private val wrongMoveSoundId: Int,
+    private val resetSoundId: Int
 ) {
 
     /** Played when the stroke extends to a new tile. */
@@ -34,9 +36,25 @@ class SoundPlayer private constructor(
         pool.play(connectSoundId, volume, volume, 1, 0, 1f)
     }
 
-    /** Played once, the instant a level's final tile connects. */
+    /** Played once, the instant a level's final tile connects - the
+     * "level up" beat that plays alongside the tile shrink/pop-out just
+     * before the next level loads. Backed by res/raw/level_up.mp3 - swap
+     * that file's contents (same filename) if a different clip is wanted
+     * later; no code change needed. */
     fun playSuccess(volume: Float = 1f) {
         pool.play(successSoundId, volume, volume, 1, 0, 1f)
+    }
+
+    /** Played the instant the player drags onto a non-adjacent/invalid
+     * tile - paired with the red stroke flash and grid shake. */
+    fun playWrongMove(volume: Float = 1f) {
+        pool.play(wrongMoveSoundId, volume, volume, 1, 0, 1f)
+    }
+
+    /** Played when the Restart button is tapped - a distinct "tearing up
+     * this attempt" cue rather than the generic UI button tap. */
+    fun playReset(volume: Float = 1f) {
+        pool.play(resetSoundId, volume, volume, 1, 0, 1f)
     }
 
     fun release() {
@@ -54,8 +72,10 @@ class SoundPlayer private constructor(
                 .setAudioAttributes(attributes)
                 .build()
             val connectId = pool.load(context, R.raw.tile_connect, 1)
-            val successId = pool.load(context, R.raw.level_complete, 1)
-            return SoundPlayer(pool, connectId, successId)
+            val successId = pool.load(context, R.raw.level_up, 1)
+            val wrongMoveId = pool.load(context, R.raw.wrong_move, 1)
+            val resetId = pool.load(context, R.raw.reset_tap, 1)
+            return SoundPlayer(pool, connectId, successId, wrongMoveId, resetId)
         }
     }
 }

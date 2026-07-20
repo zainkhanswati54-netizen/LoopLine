@@ -24,6 +24,15 @@ object SettingsStore {
         prefs(context).edit().putBoolean("vibration_enabled", enabled).apply()
     }
 
+    /** Whether the animated "How to Play" overlay has already been shown
+     * once. Home uses this to auto-show it only on a player's very first
+     * visit; the "?" chip next to the logo can always reopen it manually
+     * regardless of this flag. */
+    fun hasSeenTutorial(context: Context): Boolean = prefs(context).getBoolean("has_seen_tutorial", false)
+    fun setHasSeenTutorial(context: Context, seen: Boolean) {
+        prefs(context).edit().putBoolean("has_seen_tutorial", seen).apply()
+    }
+
     /** Wipes best levels, in-progress sessions, lifetime stats, and the
      * Daily Challenge streak. Does not touch [soundEnabled]/[vibrationEnabled]
      * themselves - those are preferences, not progress. */

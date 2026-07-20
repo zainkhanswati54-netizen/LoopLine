@@ -39,7 +39,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -72,6 +71,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -121,6 +121,7 @@ import com.loopline.puzzle.ui.theme.backgroundBrush
 import com.loopline.puzzle.ui.theme.cardSurfaceBrush
 import com.loopline.puzzle.ui.theme.goldBrush
 import com.loopline.puzzle.ui.theme.metallicBevel
+import com.loopline.puzzle.ui.theme.shake
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -139,11 +140,11 @@ private val CELL_GAP = 10.dp
 // after a rewarded-ad callback succeeds).
 private const val MAX_HINTS_PER_LEVEL = 3
 
-// How long the confetti/flash "you solved it" beat plays before the next
-// level loads itself - the entire reward moment now, since there's no
-// stars dialog or "Next level" button to tap anymore. Long enough to read
-// as a deliberate celebration, short enough that the flow never stalls.
-private const val SUCCESS_ANIMATION_MILLIS = 900L
+// How long the tile-shrink/pop-out + success sound beat plays before the
+// next level loads itself - the entire reward moment now, since there's
+// no stars dialog or "Next level" button to tap anymore. ~500ms is enough
+// to read as a deliberate celebration without the flow ever stalling.
+private const val SUCCESS_ANIMATION_MILLIS = 500L
 
 /** Unifies GameSession.RestoredProgress and ModeSession.RestoredProgress,
  * which carry identical fields but are separate types since the two
@@ -298,6 +299,23 @@ fun GameScreen(
     val burstProgress = remember(levelId) { Animatable(1f) }
     var justConnectedCell by remember(levelId) { mutableStateOf<Cell?>(null) }
 
+    // Invalid-move feedback: dragging onto a non-adjacent/already-passed
+    // tile turns the stroke red for a beat and gives the whole grid a
+    // quick shake, instead of just silently doing nothing. invalidFlash
+    // drives the red color blend on the stroke (1 = full red, fading back
+    // to the normal accent); shakeTrigger is an ever-incrementing key so
+    // Modifier.shake replays even on back-to-back wrong touches;
+    // lastInvalidCandidate debounces so dragging around on the *same*
+    // wrong tile doesn't refire the shake/sound every pointer-move frame.
+    val invalidFlash = remember(levelId) { Animatable(0f) }
+    var shakeTrigger by remember(levelId) { mutableStateOf(0) }
+    var lastInvalidCandidate by remember(levelId) { mutableStateOf<Cell?>(null) }
+
+    // Drives the "level complete" tile shrink/pop-out: every filled tile
+    // scales down toward 0 together, timed alongside the success sound,
+    // right before the next level loads itself.
+    val tileExitProgress = remember(levelId) { Animatable(0f) }
+
     // A small light that continuously travels along the completed stroke -
     // ambient motion so the path reads as "alive" even between drags,
     // rather than only reacting the instant a tile is touched.
@@ -445,6 +463,12 @@ fun GameScreen(
             if (SettingsStore.soundEnabled(context)) {
                 soundPlayer.playSuccess()
             }
+            // Fired on its own coroutine (not awaited here) so every tile's
+            // shrink/pop-out plays *simultaneously* with the success sound
+            // above and the confetti burst, rather than sequentially.
+            coroutineScope.launch {
+                tileExitProgress.animateTo(1f, animationSpec = tween(durationMillis = 420, easing = LinearEasing))
+            }
             delay(SUCCESS_ANIMATION_MILLIS)
             when {
                 isDailyChallenge -> onBack()
@@ -503,6 +527,9 @@ fun GameScreen(
             candidate.isAdjacentTo(path.last()) -> {
                 path.add(candidate)
                 hintCell = null
+                // A real move landed - a fresh wrong touch after this one
+                // should be able to shake/flash again.
+                lastInvalidCandidate = null
                 if (SettingsStore.vibrationEnabled(context)) {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
@@ -531,7 +558,27 @@ fun GameScreen(
                     )
                 }
             }
-            else -> Unit
+            // Any other tap inside the grid is an invalid move: a cell
+            // that isn't adjacent to the stroke's current end. Debounced
+            // via lastInvalidCandidate so a finger resting on the same
+            // wrong tile during a drag doesn't refire the shake/sound on
+            // every pointer-move callback - only a *new* wrong tile does.
+            else -> {
+                if (candidate != lastInvalidCandidate) {
+                    lastInvalidCandidate = candidate
+                    shakeTrigger += 1
+                    if (SettingsStore.vibrationEnabled(context)) {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                    if (SettingsStore.soundEnabled(context)) {
+                        soundPlayer.playWrongMove()
+                    }
+                    coroutineScope.launch {
+                        invalidFlash.snapTo(1f)
+                        invalidFlash.animateTo(0f, animationSpec = tween(durationMillis = 400, easing = LinearEasing))
+                    }
+                }
+            }
         }
     }
 
@@ -596,25 +643,7 @@ fun GameScreen(
                         color = accent
                     )
                 }
-            } else {
-                IconChipButton(
-                    icon = Icons.Filled.Lightbulb,
-                    contentDescription = "Hint",
-                    tint = if (hintsUsed < MAX_HINTS_PER_LEVEL) Gold else TextTertiary,
-                    prominent = hintsUsed < MAX_HINTS_PER_LEVEL,
-                    enabled = !isComplete && hintsUsed < MAX_HINTS_PER_LEVEL,
-                    onClick = { requestHint() }
-                )
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            IconChipButton(
-                icon = Icons.Filled.Refresh,
-                contentDescription = "Restart",
-                onClick = {
-                    resetAttempt()
-                    if (!isDailyChallenge) persistProgress()
-                }
-            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -695,10 +724,13 @@ fun GameScreen(
                     modifier = Modifier
                         .width(gridWidthDp)
                         .height(gridHeightDp)
+                        .shake(shakeTrigger)
                         .pointerInput(levelId) {
                             detectDragGestures(
                                 onDragStart = { offset -> handleTouch(offset, cellPx, stridePx) },
-                                onDrag = { change, _ -> handleTouch(change.position, cellPx, stridePx) }
+                                onDrag = { change, _ -> handleTouch(change.position, cellPx, stridePx) },
+                                onDragEnd = { lastInvalidCandidate = null },
+                                onDragCancel = { lastInvalidCandidate = null }
                             )
                         }
                 ) {
@@ -710,11 +742,16 @@ fun GameScreen(
                             // (spring overshoot on connectProgress carries
                             // it slightly past 1.0 before settling) instead
                             // of simply appearing filled.
-                            val popScale = if (cell == justConnectedCell) {
+                            val connectScale = if (cell == justConnectedCell) {
                                 0.6f + connectProgress.value * 0.4f
                             } else {
                                 1f
                             }
+                            // Every filled tile shrinks toward 0 together
+                            // once the level is solved - the "pop out"
+                            // beat that plays alongside the success sound
+                            // right before the next level loads.
+                            val popScale = connectScale * (1f - tileExitProgress.value)
                             val tileCenter = Offset(geo.topLeft.x + cellPx / 2f, geo.topLeft.y + cellPx / 2f)
                             scale(scale = popScale, pivot = tileCenter) {
                                 drawRoundRect(brush = accentBrush, topLeft = geo.topLeft, size = geo.size, cornerRadius = geo.corner)
@@ -723,6 +760,21 @@ fun GameScreen(
                                     brush = geo.filledBevelBrush,
                                     style = Stroke(width = cellPx * 0.045f)
                                 )
+                                // The "glow" micro-interaction: a bright
+                                // white overlay flashes in at full
+                                // strength the instant the tile connects
+                                // (burstProgress = 0) and fades out over
+                                // the same ~450ms as the bounce, on top of
+                                // the scale-up/scale-down above - a quick
+                                // brightness pop rather than a flat fill.
+                                if (cell == justConnectedCell && burstProgress.value < 1f) {
+                                    drawRoundRect(
+                                        color = Color.White.copy(alpha = (1f - burstProgress.value) * 0.55f),
+                                        topLeft = geo.topLeft,
+                                        size = geo.size,
+                                        cornerRadius = geo.corner
+                                    )
+                                }
                             }
                         } else {
                             drawRoundRect(color = TileIdle, topLeft = geo.topLeft, size = geo.size, cornerRadius = geo.corner)
@@ -742,6 +794,15 @@ fun GameScreen(
                             )
                         }
                     }
+
+                    // Blends the stroke's three tones toward red while
+                    // invalidFlash is > 0, then eases back to the normal
+                    // accent as it decays to 0 - the "line instantly turns
+                    // red" feedback for a wrong move.
+                    val invalidColor = Color(0xFFE0453B)
+                    val strokeAccent = lerpColor(accent, invalidColor, invalidFlash.value)
+                    val strokeAccentDeep = lerpColor(accentDeep, invalidColor.copy(alpha = 0.85f), invalidFlash.value)
+                    val strokeAccentHighlight = lerpColor(accentHighlight, Color.White, invalidFlash.value * 0.3f)
 
                     if (path.size > 1) {
                         for (i in 0 until path.size - 1) {
@@ -763,7 +824,7 @@ fun GameScreen(
                             // with glowPulse - drawn first so the crisp
                             // stroke on top of it still reads clearly.
                             drawLine(
-                                color = accent.copy(alpha = 0.20f + 0.14f * glowPulse),
+                                color = strokeAccent.copy(alpha = 0.20f + 0.14f * glowPulse),
                                 start = centerA,
                                 end = drawnEnd,
                                 strokeWidth = cellPx * (0.28f + 0.10f * glowPulse),
@@ -775,22 +836,23 @@ fun GameScreen(
                             // reads as a polished metal rod rather than a
                             // flat line, echoing the same highlight/core/
                             // deep ramp used everywhere else in the app.
+                            // All three blend toward red on an invalid move.
                             drawLine(
-                                color = accentDeep,
+                                color = strokeAccentDeep,
                                 start = centerA,
                                 end = drawnEnd,
                                 strokeWidth = cellPx * 0.18f,
                                 cap = StrokeCap.Round
                             )
                             drawLine(
-                                color = accent,
+                                color = strokeAccent,
                                 start = centerA,
                                 end = drawnEnd,
                                 strokeWidth = cellPx * 0.14f,
                                 cap = StrokeCap.Round
                             )
                             drawLine(
-                                color = accentHighlight.copy(alpha = 0.6f),
+                                color = strokeAccentHighlight.copy(alpha = 0.6f),
                                 start = centerA,
                                 end = drawnEnd,
                                 strokeWidth = cellPx * 0.05f,
@@ -862,6 +924,46 @@ fun GameScreen(
                 }
             }
         }
+
+        // Hint / Restart now live down here instead of as small header
+        // icons - this is the space that used to sit empty below the
+        // centered grid on most screen heights. Full-width, equal-weight
+        // MetallicButtons read as deliberate primary actions rather than
+        // an afterthought tucked into the top bar.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 20.dp)
+        ) {
+            val hintsLeft = MAX_HINTS_PER_LEVEL - hintsUsed
+            MetallicButton(
+                text = if (isSolvingHint) "Solving\u2026" else "Hint \u00b7 $hintsLeft left",
+                onClick = { requestHint() },
+                accentKey = "gold",
+                enabled = !isComplete && !isSolvingHint && hintsLeft > 0,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.width(14.dp))
+            MetallicButton(
+                text = "Restart",
+                onClick = {
+                    resetAttempt()
+                    if (!isDailyChallenge) persistProgress()
+                    if (SettingsStore.vibrationEnabled(context)) {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                    if (SettingsStore.soundEnabled(context)) {
+                        soundPlayer.playReset()
+                    }
+                },
+                accentKey = "copper",
+                enabled = !isComplete,
+                // Restart plays its own distinct paper-rip cue above
+                // instead of the generic shared button tap.
+                playTapSound = false,
+                modifier = Modifier.weight(1f)
+            )
+        }
         }
 
         AnimatedVisibility(
@@ -870,7 +972,7 @@ fun GameScreen(
             exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 28.dp)
+                .padding(bottom = 100.dp)
         ) {
             NeedHelpBanner(
                 onUseHint = {
