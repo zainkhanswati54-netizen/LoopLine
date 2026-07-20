@@ -20,7 +20,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -39,8 +38,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -64,6 +61,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Brush
@@ -85,6 +83,7 @@ import com.loopline.puzzle.game.Cell
 import com.loopline.puzzle.game.DAILY_CHALLENGE_LEVEL_ID
 import com.loopline.puzzle.game.DailyChallengeStore
 import com.loopline.puzzle.game.GameSession
+import com.loopline.puzzle.game.Level
 import com.loopline.puzzle.game.LevelRepository
 import com.loopline.puzzle.game.ModeSession
 import com.loopline.puzzle.game.PathSolver
@@ -114,7 +113,6 @@ import com.loopline.puzzle.ui.theme.accentDeepFor
 import com.loopline.puzzle.ui.theme.accentHighlightFor
 import com.loopline.puzzle.ui.theme.backgroundBrush
 import com.loopline.puzzle.ui.theme.cardSurfaceBrush
-import com.loopline.puzzle.ui.theme.drawMetallicBevel
 import com.loopline.puzzle.ui.theme.goldBrush
 import com.loopline.puzzle.ui.theme.metallicBevel
 import kotlinx.coroutines.Dispatchers
@@ -135,10 +133,78 @@ private val CELL_GAP = 10.dp
 // after a rewarded-ad callback succeeds).
 private const val MAX_HINTS_PER_LEVEL = 3
 
+// How long the confetti/flash "you solved it" beat plays before the next
+// level loads itself - the entire reward moment now, since there's no
+// stars dialog or "Next level" button to tap anymore. Long enough to read
+// as a deliberate celebration, short enough that the flow never stalls.
+private const val SUCCESS_ANIMATION_MILLIS = 900L
+
 /** Unifies GameSession.RestoredProgress and ModeSession.RestoredProgress,
  * which carry identical fields but are separate types since the two
  * session objects don't otherwise depend on each other. */
 private data class RestoredSnapshot(val path: List<Cell>, val elapsedSeconds: Int, val hintsUsed: Int)
+
+/**
+ * Precomputed, per-cell draw geometry for the puzzle grid - built once per
+ * (level, cellPx) via [buildCellGeometry]/`remember` instead of on every
+ * single frame.
+ *
+ * Perf note: the grid's flowing-spark and glow-pulse animations keep the
+ * whole Canvas redrawing at ~60fps for as long as the level is on screen.
+ * Before this, every one of those frames called `drawMetallicBevel` for
+ * every cell, which built a brand-new Path (via RoundRect) and a new
+ * linear-gradient Brush from scratch each time - for an outline that never
+ * actually changes once a cell's position and size are fixed. On a grid
+ * with ~60-100 cells that's thousands of extra allocations a second doing
+ * nothing but generating garbage-collector pauses, which is the most
+ * likely source of drawing-related jank. Idle and filled tiles use
+ * slightly different inset/stroke widths, so each cell keeps one cached
+ * Path+Brush pair per state rather than one shared pair.
+ */
+private class CellGeometry(
+    val topLeft: Offset,
+    val size: Size,
+    val corner: CornerRadius,
+    val idleBevelPath: Path,
+    val idleBevelBrush: Brush,
+    val filledBevelPath: Path,
+    val filledBevelBrush: Brush
+)
+
+private fun bevelPath(topLeft: Offset, size: Size, cornerRadiusPx: Float, strokeWidthPx: Float): Path {
+    val inset = strokeWidthPx / 2f
+    val rect = RoundRect(
+        left = topLeft.x + inset,
+        top = topLeft.y + inset,
+        right = topLeft.x + size.width - inset,
+        bottom = topLeft.y + size.height - inset,
+        cornerRadius = CornerRadius(cornerRadiusPx)
+    )
+    return Path().apply { addRoundRect(rect) }
+}
+
+private fun bevelBrush(topLeft: Offset, size: Size, highlight: Color, shadow: Color): Brush =
+    Brush.linearGradient(
+        colors = listOf(highlight, Color.Transparent, shadow),
+        start = Offset(topLeft.x, topLeft.y),
+        end = Offset(topLeft.x + size.width, topLeft.y + size.height)
+    )
+
+private fun buildCellGeometry(level: Level, cellPx: Float, stridePx: Float): Map<Cell, CellGeometry> =
+    level.cells.associateWith { cell ->
+        val topLeft = Offset(cell.col * stridePx, cell.row * stridePx)
+        val cellSize = Size(cellPx, cellPx)
+        val corner = CornerRadius(cellPx * 0.22f)
+        CellGeometry(
+            topLeft = topLeft,
+            size = cellSize,
+            corner = corner,
+            idleBevelPath = bevelPath(topLeft, cellSize, corner.x, cellPx * 0.035f),
+            idleBevelBrush = bevelBrush(topLeft, cellSize, Color.White.copy(alpha = 0.55f), TileIdleShade.copy(alpha = 0.7f)),
+            filledBevelPath = bevelPath(topLeft, cellSize, corner.x, cellPx * 0.045f),
+            filledBevelBrush = bevelBrush(topLeft, cellSize, Color.White.copy(alpha = 0.4f), Color.Black.copy(alpha = 0.3f))
+        )
+    }
 
 @Composable
 fun GameScreen(
@@ -210,8 +276,6 @@ fun GameScreen(
 
     var elapsedSeconds by remember(levelId) { mutableStateOf(restored?.elapsedSeconds ?: 0) }
     var completionSeconds by remember(levelId) { mutableStateOf(0) }
-    var showDialog by remember(levelId) { mutableStateOf(false) }
-    var isAdvancingLevel by remember(levelId) { mutableStateOf(false) }
 
     // Pausing freezes the clock (checked in the timer LaunchedEffect below)
     // and, because the Pause Menu is a real Dialog, also blocks every touch
@@ -354,6 +418,11 @@ fun GameScreen(
         }
     }
 
+    // The whole "you solved it" moment is now just this: record the result,
+    // buzz once, let the confetti/flash play, then move on by itself - no
+    // stars, no "Next level" button, nothing for the player to tap. Daily
+    // Challenge has no "next level" to advance to, so it returns to Home
+    // once the animation's had its moment instead.
     LaunchedEffect(isComplete) {
         if (isComplete) {
             completionSeconds = elapsedSeconds
@@ -367,10 +436,12 @@ fun GameScreen(
             if (SettingsStore.vibrationEnabled(context)) {
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
             }
-            delay(650) // let the confetti play before the dialog covers it
-            showDialog = true
-        } else {
-            showDialog = false
+            delay(SUCCESS_ANIMATION_MILLIS)
+            when {
+                isDailyChallenge -> onBack()
+                playMode != null -> onNavigateToLevel(ModeSession.next(context, playMode).id)
+                else -> onNavigateToLevel(GameSession.next(context).id)
+            }
         }
     }
 
@@ -393,9 +464,10 @@ fun GameScreen(
     // always opens the Pause Menu instead; once the menu's own Dialog is
     // showing, its default dismiss-on-back (see PauseMenuDialog's
     // onDismissRequest) resumes the game the same way tapping Continue
-    // does, so back never has to be handled twice. It's disabled while the
-    // level-complete dialog is up so the two modals can't stack.
-    BackHandler(enabled = !isPaused && !showDialog) {
+    // does, so back never has to be handled twice. It's disabled during the
+    // brief auto-advance window after a solve, so Pause can't pop up over
+    // the confetti right before the next level loads itself.
+    BackHandler(enabled = !isPaused && !isComplete) {
         isPaused = true
     }
 
@@ -454,6 +526,14 @@ fun GameScreen(
         }
     }
 
+    // Perf: these gradients don't depend on anything that changes per
+    // recomposition, but backgroundBrush()/cardSurfaceBrush() are plain
+    // functions - called unremembered, they allocated a brand new Brush
+    // object on every recomposition (which happens at least once a second
+    // from the timer tick, and again on every tile connect). remember
+    // builds each one exactly once for this screen's lifetime.
+    val background = remember { backgroundBrush() }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // Background is its own layer (not just a Column modifier) so the
         // ambient particles below can sit on top of the gradient but
@@ -461,7 +541,7 @@ fun GameScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(backgroundBrush())
+                .background(background)
         )
         AmbientParticles(modifier = Modifier.fillMaxSize())
 
@@ -548,9 +628,18 @@ fun GameScreen(
             modifier = Modifier.padding(start = 24.dp)
         )
 
-        Spacer(modifier = Modifier.height(28.dp))
-
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        // weight(1f) claims all the vertical space left over after the
+        // header/stats row above, and contentAlignment centers the grid
+        // inside it - so the puzzle sits perfectly centered both ways on
+        // any screen height instead of top-aligning and leaving a dead gap
+        // at the bottom. Replaces a fixed-height spacer that only
+        // approximated centering on one specific screen size.
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.Center
+        ) {
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -570,6 +659,10 @@ fun GameScreen(
                 val gridWidthDp = with(density) { (cellPx * level.cols + gapPx * (level.cols - 1)).toDp() }
                 val gridHeightDp = with(density) { (cellPx * level.rows + gapPx * (level.rows - 1)).toDp() }
 
+                // Built once per level/size, reused every frame - see
+                // CellGeometry's doc comment for why this matters for perf.
+                val cellGeometry = remember(level, cellPx) { buildCellGeometry(level, cellPx, stridePx) }
+
                 Canvas(
                     modifier = Modifier
                         .width(gridWidthDp)
@@ -582,9 +675,7 @@ fun GameScreen(
                         }
                 ) {
                     level.cells.forEach { cell ->
-                        val topLeft = Offset(cell.col * stridePx, cell.row * stridePx)
-                        val cellSize = Size(cellPx, cellPx)
-                        val corner = CornerRadius(cellPx * 0.22f)
+                        val geo = cellGeometry.getValue(cell)
                         val inPath = cell in path
                         if (inPath) {
                             // The tile that was *just* connected bounces in
@@ -596,35 +687,29 @@ fun GameScreen(
                             } else {
                                 1f
                             }
-                            val tileCenter = Offset(topLeft.x + cellPx / 2f, topLeft.y + cellPx / 2f)
+                            val tileCenter = Offset(geo.topLeft.x + cellPx / 2f, geo.topLeft.y + cellPx / 2f)
                             scale(scale = popScale, pivot = tileCenter) {
-                                drawRoundRect(brush = accentBrush, topLeft = topLeft, size = cellSize, cornerRadius = corner)
-                                drawMetallicBevel(
-                                    topLeft = topLeft,
-                                    boxSize = cellSize,
-                                    cornerRadiusPx = corner.x,
-                                    highlight = Color.White.copy(alpha = 0.4f),
-                                    shadow = Color.Black.copy(alpha = 0.3f),
-                                    strokeWidthPx = cellPx * 0.045f
+                                drawRoundRect(brush = accentBrush, topLeft = geo.topLeft, size = geo.size, cornerRadius = geo.corner)
+                                drawPath(
+                                    path = geo.filledBevelPath,
+                                    brush = geo.filledBevelBrush,
+                                    style = Stroke(width = cellPx * 0.045f)
                                 )
                             }
                         } else {
-                            drawRoundRect(color = TileIdle, topLeft = topLeft, size = cellSize, cornerRadius = corner)
-                            drawMetallicBevel(
-                                topLeft = topLeft,
-                                boxSize = cellSize,
-                                cornerRadiusPx = corner.x,
-                                highlight = Color.White.copy(alpha = 0.55f),
-                                shadow = TileIdleShade.copy(alpha = 0.7f),
-                                strokeWidthPx = cellPx * 0.035f
+                            drawRoundRect(color = TileIdle, topLeft = geo.topLeft, size = geo.size, cornerRadius = geo.corner)
+                            drawPath(
+                                path = geo.idleBevelPath,
+                                brush = geo.idleBevelBrush,
+                                style = Stroke(width = cellPx * 0.035f)
                             )
                         }
                         if (cell == hintCell) {
                             drawRoundRect(
                                 color = Gold,
-                                topLeft = topLeft,
-                                size = cellSize,
-                                cornerRadius = corner,
+                                topLeft = geo.topLeft,
+                                size = geo.size,
+                                cornerRadius = geo.corner,
                                 style = Stroke(width = cellPx * 0.08f)
                             )
                         }
@@ -769,47 +854,6 @@ fun GameScreen(
         }
     }
 
-    if (showDialog) {
-        LevelCompleteDialog(
-            stars = starsFor(completionSeconds, level.cellCount),
-            elapsedSeconds = completionSeconds,
-            accentKey = level.accentKey,
-            isDailyChallenge = isDailyChallenge,
-            streak = if (isDailyChallenge) DailyChallengeStore.currentStreak(context) else 0,
-            showChangeDifficulty = !isDailyChallenge && playMode == null,
-            onLevelSelect = onBack,
-            onNext = {
-                when {
-                    isDailyChallenge -> {
-                        showDialog = false
-                        onBack()
-                    }
-                    playMode != null -> {
-                        if (!isAdvancingLevel) {
-                            isAdvancingLevel = true
-                            showDialog = false
-                            val nextLevel = ModeSession.next(context, playMode)
-                            onNavigateToLevel(nextLevel.id)
-                        }
-                    }
-                    !isAdvancingLevel -> {
-                        // Bug this fixes: a fast double-tap on "Next level" used to
-                        // fire this callback twice before the navigation away from
-                        // this screen could take effect, and each call advanced
-                        // GameSession by one real level - so two taps could skip a
-                        // whole level. Dismissing the dialog immediately removes
-                        // the button from the screen, and the flag is an extra
-                        // guard for the one frame where it might still be tappable.
-                        isAdvancingLevel = true
-                        showDialog = false
-                        val nextLevel = GameSession.next(context)
-                        onNavigateToLevel(nextLevel.id)
-                    }
-                }
-            }
-        )
-    }
-
     if (showTimeUpDialog) {
         TimeUpDialog(
             onRetry = {
@@ -836,12 +880,6 @@ fun GameScreen(
     }
 }
 
-private fun starsFor(seconds: Int, cellCount: Int): Int = when {
-    seconds <= cellCount * 1.2 -> 3
-    seconds <= cellCount * 2.5 -> 2
-    else -> 1
-}
-
 /**
  * A floating, dismissible nudge - not a dialog. It never blocks the grid
  * or demands a choice before continuing; tapping it uses a hint the same
@@ -853,6 +891,8 @@ private fun NeedHelpBanner(
     onUseHint: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val cardBrush = remember { cardSurfaceBrush() }
+    val goldBrushRemembered = remember { goldBrush() }
     Row(
         modifier = Modifier
             .widthIn(max = 320.dp)
@@ -863,7 +903,7 @@ private fun NeedHelpBanner(
                 spotColor = Gold.copy(alpha = 0.35f)
             )
             .clip(LoopLineShapes.card)
-            .background(cardSurfaceBrush())
+            .background(cardBrush)
             .border(width = 1.dp, color = Gold.copy(alpha = 0.3f), shape = LoopLineShapes.card)
             .clickable(onClick = onUseHint)
             .padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 6.dp),
@@ -873,7 +913,7 @@ private fun NeedHelpBanner(
             modifier = Modifier
                 .size(34.dp)
                 .clip(CircleShape)
-                .background(goldBrush()),
+                .background(goldBrushRemembered),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -1028,73 +1068,6 @@ private fun ConfettiBurst(modifier: Modifier = Modifier) {
             }
         }
     }
-}
-
-@Composable
-private fun LevelCompleteDialog(
-    stars: Int,
-    elapsedSeconds: Int,
-    accentKey: String,
-    isDailyChallenge: Boolean = false,
-    streak: Int = 0,
-    showChangeDifficulty: Boolean = true,
-    onLevelSelect: () -> Unit,
-    onNext: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = { /* force a choice via the buttons below */ },
-        containerColor = SurfaceCardElevated,
-        shape = LoopLineShapes.dialog,
-        modifier = Modifier.metallicBevel(cornerDp = LoopLineShapes.dialogCornerDp),
-        title = {
-            Text(
-                if (isDailyChallenge) "Daily Challenge complete!" else "Level complete!",
-                style = MaterialTheme.typography.headlineMedium,
-                color = TextPrimary
-            )
-        },
-        text = {
-            Column {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    repeat(3) { index ->
-                        Icon(
-                            imageVector = if (index < stars) Icons.Filled.Star else Icons.Filled.StarBorder,
-                            contentDescription = null,
-                            tint = if (index < stars) Gold else TextTertiary
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    "Solved in ${elapsedSeconds}s",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
-                )
-                if (isDailyChallenge) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        if (streak > 1) "\ud83d\udd25 $streak day streak \u2014 come back tomorrow for the next one" else "Come back tomorrow for the next one",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            MetallicButton(
-                text = if (isDailyChallenge) "Back to Home" else "Next level",
-                onClick = onNext,
-                accentKey = accentKey
-            )
-        },
-        dismissButton = {
-            if (showChangeDifficulty) {
-                TextButton(onClick = onLevelSelect) {
-                    Text("Change difficulty", color = TextSecondary)
-                }
-            }
-        }
-    )
 }
 
 /**
