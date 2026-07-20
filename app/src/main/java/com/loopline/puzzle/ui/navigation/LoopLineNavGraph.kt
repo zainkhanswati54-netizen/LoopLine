@@ -10,6 +10,8 @@ import androidx.navigation.navArgument
 import com.loopline.puzzle.game.DAILY_CHALLENGE_LEVEL_ID
 import com.loopline.puzzle.game.DailyChallengeStore
 import com.loopline.puzzle.game.GameSession
+import com.loopline.puzzle.game.ModeSession
+import com.loopline.puzzle.game.PlayMode
 import com.loopline.puzzle.ui.screens.DifficultySelectScreen
 import com.loopline.puzzle.ui.screens.GameScreen
 import com.loopline.puzzle.ui.screens.HomeScreen
@@ -60,7 +62,15 @@ fun LoopLineNavGraph() {
                 },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onOpenStatistics = { navController.navigate(Routes.STATISTICS) },
-                onOpenLeaderboard = { navController.navigate(Routes.LEADERBOARD) }
+                onOpenLeaderboard = { navController.navigate(Routes.LEADERBOARD) },
+                onPlayZen = {
+                    val level = ModeSession.resume(context, PlayMode.ZEN)
+                    navController.navigate(Routes.game(level.id))
+                },
+                onPlayTimed = {
+                    val level = ModeSession.resume(context, PlayMode.TIMED)
+                    navController.navigate(Routes.game(level.id))
+                }
             )
         }
 
@@ -108,8 +118,17 @@ fun LoopLineNavGraph() {
                     navController.popBackStack()
                 },
                 onNavigateToLevel = { newId ->
+                    // Pops the current Game entry (whichever one it is) off
+                    // before pushing the new level, leaving whatever's
+                    // underneath - Difficulty Select for Classic, Home for
+                    // Daily/Zen/Timed - untouched. A hardcoded
+                    // popUpTo(DIFFICULTY_SELECT) here would silently do
+                    // nothing for the latter three (that route isn't on
+                    // their back stack), so every "Next level" tap just
+                    // stacked another Game entry on top instead of
+                    // replacing the current one.
                     navController.navigate(Routes.game(newId)) {
-                        popUpTo(Routes.DIFFICULTY_SELECT) { inclusive = false }
+                        popUpTo(Routes.GAME) { inclusive = true }
                     }
                 },
                 onGoHome = {

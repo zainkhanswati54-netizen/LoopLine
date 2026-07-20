@@ -86,7 +86,9 @@ import com.loopline.puzzle.game.DAILY_CHALLENGE_LEVEL_ID
 import com.loopline.puzzle.game.DailyChallengeStore
 import com.loopline.puzzle.game.GameSession
 import com.loopline.puzzle.game.LevelRepository
+import com.loopline.puzzle.game.ModeSession
 import com.loopline.puzzle.game.PathSolver
+import com.loopline.puzzle.game.PlayMode
 import com.loopline.puzzle.game.ProgressStore
 import com.loopline.puzzle.game.SettingsStore
 import com.loopline.puzzle.game.SoundPlayer
@@ -133,6 +135,11 @@ private val CELL_GAP = 10.dp
 // after a rewarded-ad callback succeeds).
 private const val MAX_HINTS_PER_LEVEL = 3
 
+/** Unifies GameSession.RestoredProgress and ModeSession.RestoredProgress,
+ * which carry identical fields but are separate types since the two
+ * session objects don't otherwise depend on each other. */
+private data class RestoredSnapshot(val path: List<Cell>, val elapsedSeconds: Int, val hintsUsed: Int)
+
 @Composable
 fun GameScreen(
     levelId: Int,
@@ -150,6 +157,9 @@ fun GameScreen(
     val sessionLevel = remember(levelId) { GameSession.lookup(levelId) }
     val level = sessionLevel ?: LevelRepository.byId(levelId)
     val isDailyChallenge = levelId == DAILY_CHALLENGE_LEVEL_ID
+    val playMode = remember(levelId) { ModeSession.modeFor(levelId) }
+    val isZen = playMode == PlayMode.ZEN
+    val isTimed = playMode == PlayMode.TIMED
 
     if (level == null) {
         Box(
@@ -169,12 +179,22 @@ fun GameScreen(
         onDispose { soundPlayer.release() }
     }
 
-    // If GameSession reconstructed this exact level from a persisted
-    // session (app was restarted mid-puzzle), this carries the stroke,
-    // timer, and hint count the player actually left off at - consumed
-    // once so navigating onward to a genuinely fresh level doesn't
-    // reapply it.
-    val restored = remember(levelId) { GameSession.consumeRestoredProgress(levelId) }
+    // If GameSession/ModeSession reconstructed this exact level from a
+    // persisted session (app was restarted mid-puzzle), this carries the
+    // stroke, timer, and hint count the player actually left off at -
+    // consumed once so navigating onward to a genuinely fresh level
+    // doesn't reapply it.
+    val restored = remember(levelId) {
+        if (playMode != null) {
+            ModeSession.consumeRestoredProgress(levelId)?.let {
+                RestoredSnapshot(it.path, it.elapsedSeconds, it.hintsUsed)
+            }
+        } else {
+            GameSession.consumeRestoredProgress(levelId)?.let {
+                RestoredSnapshot(it.path, it.elapsedSeconds, it.hintsUsed)
+            }
+        }
+    }
 
     val path = remember(levelId) {
         mutableStateListOf<Cell>().apply {
@@ -250,6 +270,41 @@ fun GameScreen(
     var hintsUsed by remember(levelId) { mutableStateOf(restored?.hintsUsed ?: 0) }
     val coroutineScope = rememberCoroutineScope()
 
+    // One place that knows which session actually owns this level, so the
+    // many call sites that need to persist progress (every connect, every
+    // hint, every background) don't each have to re-derive it. The Daily
+    // Challenge deliberately does nothing here - it only records a result
+    // once, on completion (see DailyChallengeStore.recordCompletion).
+    fun persistProgress() {
+        when {
+            isDailyChallenge -> Unit
+            playMode != null -> ModeSession.saveProgress(context, playMode, path.toList(), elapsedSeconds, hintsUsed)
+            else -> GameSession.saveProgress(context, path.toList(), elapsedSeconds, hintsUsed)
+        }
+    }
+
+    // Timed mode: a countdown instead of a stopwatch. Budget scales with
+    // the puzzle's size (3s per tile, floor of 20s) so bigger levels get
+    // proportionally more time rather than a single fixed number that's
+    // generous early and brutal once the grid grows.
+    val timeBudgetSeconds = remember(levelId) { (level.cellCount * 3).coerceAtLeast(20) }
+    var showTimeUpDialog by remember(levelId) { mutableStateOf(false) }
+
+    fun resetAttempt() {
+        path.clear()
+        path.add(level.start)
+        elapsedSeconds = 0
+        hintCell = null
+        hintsUsed = 0
+    }
+
+    LaunchedEffect(elapsedSeconds, isComplete, isTimed) {
+        if (isTimed && !isComplete && !showTimeUpDialog && elapsedSeconds >= timeBudgetSeconds) {
+            isPaused = true
+            showTimeUpDialog = true
+        }
+    }
+
     // Whenever the app itself goes to the background (home button, app
     // switcher, screen lock) - not just our own in-app Pause Menu - the
     // clock now actually stops instead of ticking away unseen, and whatever
@@ -263,9 +318,7 @@ fun GameScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
                 isPaused = true
-                if (!isDailyChallenge) {
-                    GameSession.saveProgress(context, path.toList(), elapsedSeconds, hintsUsed)
-                }
+                persistProgress()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -287,8 +340,8 @@ fun GameScreen(
             hintCell = next
             hintsUsed += 1
             if (!isDailyChallenge) {
-                ProgressStore.recordHintUsed(context)
-                GameSession.saveProgress(context, path.toList(), elapsedSeconds, hintsUsed)
+                if (playMode == null) ProgressStore.recordHintUsed(context)
+                persistProgress()
             }
         }
     }
@@ -376,7 +429,7 @@ fun GameScreen(
                     soundPlayer.playConnect()
                 }
                 if (!isDailyChallenge) {
-                    GameSession.saveProgress(context, path.toList(), elapsedSeconds, hintsUsed)
+                    persistProgress()
                 }
                 justConnectedCell = candidate
                 coroutineScope.launch {
@@ -437,6 +490,8 @@ fun GameScreen(
                 Text(
                     text = when {
                         isDailyChallenge -> "Today's puzzle"
+                        isZen -> "Zen \u00b7 Level ${ModeSession.levelNumberFor(PlayMode.ZEN)}"
+                        isTimed -> "Timed \u00b7 Level ${ModeSession.levelNumberFor(PlayMode.TIMED)}"
                         sessionLevel != null -> GameSession.difficulty.label
                         else -> "Preview"
                     },
@@ -467,11 +522,8 @@ fun GameScreen(
                 icon = Icons.Filled.Refresh,
                 contentDescription = "Restart",
                 onClick = {
-                    path.clear()
-                    path.add(level.start)
-                    elapsedSeconds = 0
-                    hintCell = null
-                    hintsUsed = 0
+                    resetAttempt()
+                    if (!isDailyChallenge) persistProgress()
                 }
             )
         }
@@ -479,10 +531,20 @@ fun GameScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "${path.size} / ${level.cellCount} tiles \u00b7 ${elapsedSeconds}s \u00b7 " +
-                "${MAX_HINTS_PER_LEVEL - hintsUsed} hint${if (MAX_HINTS_PER_LEVEL - hintsUsed == 1) "" else "s"} left",
+            text = run {
+                val timeText = when {
+                    isTimed -> "${(timeBudgetSeconds - elapsedSeconds).coerceAtLeast(0)}s left"
+                    isZen -> null // no clock pressure in Zen - just tiles and hints
+                    else -> "${elapsedSeconds}s"
+                }
+                listOfNotNull(
+                    "${path.size} / ${level.cellCount} tiles",
+                    timeText,
+                    "${MAX_HINTS_PER_LEVEL - hintsUsed} hint${if (MAX_HINTS_PER_LEVEL - hintsUsed == 1) "" else "s"} left"
+                ).joinToString(" \u00b7 ")
+            },
             style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary,
+            color = if (isTimed && timeBudgetSeconds - elapsedSeconds <= 10) Copper else TextSecondary,
             modifier = Modifier.padding(start = 24.dp)
         )
 
@@ -714,24 +776,51 @@ fun GameScreen(
             accentKey = level.accentKey,
             isDailyChallenge = isDailyChallenge,
             streak = if (isDailyChallenge) DailyChallengeStore.currentStreak(context) else 0,
+            showChangeDifficulty = !isDailyChallenge && playMode == null,
             onLevelSelect = onBack,
             onNext = {
-                if (isDailyChallenge) {
-                    showDialog = false
-                    onBack()
-                } else if (!isAdvancingLevel) {
-                    // Bug this fixes: a fast double-tap on "Next level" used to
-                    // fire this callback twice before the navigation away from
-                    // this screen could take effect, and each call advanced
-                    // GameSession by one real level - so two taps could skip a
-                    // whole level. Dismissing the dialog immediately removes
-                    // the button from the screen, and the flag is an extra
-                    // guard for the one frame where it might still be tappable.
-                    isAdvancingLevel = true
-                    showDialog = false
-                    val nextLevel = GameSession.next(context)
-                    onNavigateToLevel(nextLevel.id)
+                when {
+                    isDailyChallenge -> {
+                        showDialog = false
+                        onBack()
+                    }
+                    playMode != null -> {
+                        if (!isAdvancingLevel) {
+                            isAdvancingLevel = true
+                            showDialog = false
+                            val nextLevel = ModeSession.next(context, playMode)
+                            onNavigateToLevel(nextLevel.id)
+                        }
+                    }
+                    !isAdvancingLevel -> {
+                        // Bug this fixes: a fast double-tap on "Next level" used to
+                        // fire this callback twice before the navigation away from
+                        // this screen could take effect, and each call advanced
+                        // GameSession by one real level - so two taps could skip a
+                        // whole level. Dismissing the dialog immediately removes
+                        // the button from the screen, and the flag is an extra
+                        // guard for the one frame where it might still be tappable.
+                        isAdvancingLevel = true
+                        showDialog = false
+                        val nextLevel = GameSession.next(context)
+                        onNavigateToLevel(nextLevel.id)
+                    }
                 }
+            }
+        )
+    }
+
+    if (showTimeUpDialog) {
+        TimeUpDialog(
+            onRetry = {
+                showTimeUpDialog = false
+                resetAttempt()
+                persistProgress()
+                isPaused = false
+            },
+            onGoHome = {
+                showTimeUpDialog = false
+                onGoHome()
             }
         )
     }
@@ -948,6 +1037,7 @@ private fun LevelCompleteDialog(
     accentKey: String,
     isDailyChallenge: Boolean = false,
     streak: Int = 0,
+    showChangeDifficulty: Boolean = true,
     onLevelSelect: () -> Unit,
     onNext: () -> Unit
 ) {
@@ -998,7 +1088,7 @@ private fun LevelCompleteDialog(
             )
         },
         dismissButton = {
-            if (!isDailyChallenge) {
+            if (showChangeDifficulty) {
                 TextButton(onClick = onLevelSelect) {
                     Text("Change difficulty", color = TextSecondary)
                 }
@@ -1036,6 +1126,43 @@ private fun PauseMenuDialog(
         },
         confirmButton = {
             MetallicButton(text = "Continue", onClick = onContinue)
+        },
+        dismissButton = {
+            TextButton(onClick = onGoHome) {
+                Text("Go to Home", color = TextSecondary)
+            }
+        }
+    )
+}
+
+/**
+ * Timed mode's failure state: the countdown hit zero before the stroke
+ * covered every tile. Retry resets this same attempt (same puzzle, same
+ * level number - it doesn't burn a level or regenerate a new one); Go to
+ * Home leaves the mode entirely.
+ */
+@Composable
+private fun TimeUpDialog(
+    onRetry: () -> Unit,
+    onGoHome: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onRetry,
+        containerColor = SurfaceCardElevated,
+        shape = LoopLineShapes.dialog,
+        modifier = Modifier.metallicBevel(cornerDp = LoopLineShapes.dialogCornerDp),
+        title = {
+            Text("Time's up!", style = MaterialTheme.typography.headlineMedium, color = TextPrimary)
+        },
+        text = {
+            Text(
+                "The clock ran out before the stroke covered every tile. Give this one another go?",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary
+            )
+        },
+        confirmButton = {
+            MetallicButton(text = "Retry", onClick = onRetry, accentKey = "copper")
         },
         dismissButton = {
             TextButton(onClick = onGoHome) {

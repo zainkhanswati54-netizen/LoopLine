@@ -92,7 +92,7 @@ object ProgressStore {
         val hintsUsed: Int
     )
 
-    private fun sk(difficulty: Difficulty, field: String) = "session_${field}_${difficulty.name}"
+    private fun sk(key: String, field: String) = "session_${field}_${key}"
 
     private fun encodeCells(cells: Collection<Cell>): String =
         cells.joinToString(";") { "${it.row},${it.col}" }
@@ -108,57 +108,66 @@ object ProgressStore {
         }
     }
 
-    fun saveSession(context: Context, difficulty: Difficulty, session: SavedSession) {
+    fun saveSession(context: Context, difficulty: Difficulty, session: SavedSession) =
+        saveSessionByKey(context, difficulty.name, session)
+
+    fun loadSession(context: Context, difficulty: Difficulty): SavedSession? =
+        loadSessionByKey(context, difficulty.name)
+
+    fun clearSession(context: Context, difficulty: Difficulty) =
+        clearSessionByKey(context, difficulty.name)
+
+    fun saveSessionByKey(context: Context, key: String, session: SavedSession) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
-            .putInt(sk(difficulty, "levelNumber"), session.levelNumber)
-            .putInt(sk(difficulty, "rows"), session.rows)
-            .putInt(sk(difficulty, "cols"), session.cols)
-            .putString(sk(difficulty, "cells"), encodeCells(session.cells))
-            .putString(sk(difficulty, "start"), encodeCells(listOf(session.start)))
-            .putString(sk(difficulty, "accent"), session.accentKey)
-            .putString(sk(difficulty, "path"), encodeCells(session.path))
-            .putInt(sk(difficulty, "elapsed"), session.elapsedSeconds)
-            .putInt(sk(difficulty, "hints"), session.hintsUsed)
+            .putInt(sk(key, "levelNumber"), session.levelNumber)
+            .putInt(sk(key, "rows"), session.rows)
+            .putInt(sk(key, "cols"), session.cols)
+            .putString(sk(key, "cells"), encodeCells(session.cells))
+            .putString(sk(key, "start"), encodeCells(listOf(session.start)))
+            .putString(sk(key, "accent"), session.accentKey)
+            .putString(sk(key, "path"), encodeCells(session.path))
+            .putInt(sk(key, "elapsed"), session.elapsedSeconds)
+            .putInt(sk(key, "hints"), session.hintsUsed)
             .apply()
     }
 
-    fun loadSession(context: Context, difficulty: Difficulty): SavedSession? {
+    fun loadSessionByKey(context: Context, key: String): SavedSession? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val levelNumber = prefs.getInt(sk(difficulty, "levelNumber"), 0)
+        val levelNumber = prefs.getInt(sk(key, "levelNumber"), 0)
         if (levelNumber <= 0) return null
-        val cellsRaw = prefs.getString(sk(difficulty, "cells"), null) ?: return null
-        val startRaw = prefs.getString(sk(difficulty, "start"), null) ?: return null
+        val cellsRaw = prefs.getString(sk(key, "cells"), null) ?: return null
+        val startRaw = prefs.getString(sk(key, "start"), null) ?: return null
         val cells = decodeCells(cellsRaw).toSet()
         val start = decodeCells(startRaw).firstOrNull() ?: return null
         if (cells.isEmpty() || start !in cells) return null
-        val accent = prefs.getString(sk(difficulty, "accent"), null) ?: "gold"
-        val path = decodeCells(prefs.getString(sk(difficulty, "path"), "") ?: "").ifEmpty { listOf(start) }
+        val accent = prefs.getString(sk(key, "accent"), null) ?: "gold"
+        val path = decodeCells(prefs.getString(sk(key, "path"), "") ?: "").ifEmpty { listOf(start) }
         return SavedSession(
             levelNumber = levelNumber,
-            rows = prefs.getInt(sk(difficulty, "rows"), 1),
-            cols = prefs.getInt(sk(difficulty, "cols"), 1),
+            rows = prefs.getInt(sk(key, "rows"), 1),
+            cols = prefs.getInt(sk(key, "cols"), 1),
             cells = cells,
             start = start,
             accentKey = accent,
             path = path,
-            elapsedSeconds = prefs.getInt(sk(difficulty, "elapsed"), 0),
-            hintsUsed = prefs.getInt(sk(difficulty, "hints"), 0)
+            elapsedSeconds = prefs.getInt(sk(key, "elapsed"), 0),
+            hintsUsed = prefs.getInt(sk(key, "hints"), 0)
         )
     }
 
-    fun clearSession(context: Context, difficulty: Difficulty) {
+    fun clearSessionByKey(context: Context, key: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
-            .remove(sk(difficulty, "levelNumber"))
-            .remove(sk(difficulty, "rows"))
-            .remove(sk(difficulty, "cols"))
-            .remove(sk(difficulty, "cells"))
-            .remove(sk(difficulty, "start"))
-            .remove(sk(difficulty, "accent"))
-            .remove(sk(difficulty, "path"))
-            .remove(sk(difficulty, "elapsed"))
-            .remove(sk(difficulty, "hints"))
+            .remove(sk(key, "levelNumber"))
+            .remove(sk(key, "rows"))
+            .remove(sk(key, "cols"))
+            .remove(sk(key, "cells"))
+            .remove(sk(key, "start"))
+            .remove(sk(key, "accent"))
+            .remove(sk(key, "path"))
+            .remove(sk(key, "elapsed"))
+            .remove(sk(key, "hints"))
             .apply()
     }
 }

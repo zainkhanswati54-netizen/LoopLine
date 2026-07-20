@@ -58,6 +58,32 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 
 ## Recent fixes (this update)
 
+- **Zen and Timed are real, playable modes now**, not "coming soon" cards.
+  Both are endless progressions of their own (`ModeSession`, a sibling of
+  `GameSession` - same hydrate/resume/next/persist shape, but one track
+  each instead of per-difficulty) using Normal's grid scaling as a
+  baseline:
+  - **Zen** is Classic without the clock displayed - no time pressure, just
+    tiles and hints.
+  - **Timed** replaces the stopwatch with a countdown (3s/tile, floor of
+    20s); running out opens a "Time's up" dialog to retry the same attempt
+    or head home. The header's time reading turns copper in the last 10s.
+- **Home's top bar no longer has separate Stats/Leaderboard/Settings
+  icons.** All three are now `ModeCard`s in the same "MORE" grid as Zen and
+  Timed - same size, same badge style, same visual weight - since treating
+  utility screens as smaller icon buttons made them look like an
+  afterthought next to the gameplay modes.
+- **Fixed a real navigation bug this surfaced**: "Next level" popped the
+  back stack up to Difficulty Select unconditionally, which is fine for
+  Classic but is a route that was never on the stack for Daily/Zen/Timed
+  (all three are entered straight from Home) - so every "Next level" tap in
+  those modes just kept stacking a new Game screen on top instead of
+  replacing the current one. Now it pops the current Game entry
+  specifically (`popUpTo(Routes.GAME)`), which correctly leaves whatever's
+  underneath - Difficulty Select or Home - untouched either way.
+
+## Recent fixes (previous update)
+
 - **"Next level" double-tap no longer skips a level.** A fast double-tap
   fired the callback twice before navigation away from GameScreen could
   take effect, and each call advanced `GameSession` by one real level. The
