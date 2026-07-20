@@ -20,11 +20,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -76,7 +78,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.loopline.puzzle.game.Cell
@@ -91,6 +96,7 @@ import com.loopline.puzzle.game.PlayMode
 import com.loopline.puzzle.game.ProgressStore
 import com.loopline.puzzle.game.SettingsStore
 import com.loopline.puzzle.game.SoundPlayer
+import com.loopline.puzzle.ui.components.GradientText
 import com.loopline.puzzle.ui.components.IconChipButton
 import com.loopline.puzzle.ui.components.MetallicButton
 import com.loopline.puzzle.ui.theme.Copper
@@ -436,6 +442,9 @@ fun GameScreen(
             if (SettingsStore.vibrationEnabled(context)) {
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
             }
+            if (SettingsStore.soundEnabled(context)) {
+                soundPlayer.playSuccess()
+            }
             delay(SUCCESS_ANIMATION_MILLIS)
             when {
                 isDailyChallenge -> onBack()
@@ -647,11 +656,30 @@ fun GameScreen(
                 contentAlignment = Alignment.Center
             ) {
                 val availableWidthPx = with(density) { maxWidth.toPx() }
+                // Bug fix: this used to size cells from availableWidthPx
+                // alone. That's fine for a square-ish grid, but the
+                // generator crops every level to its own walk's bounding
+                // box (see LevelGenerator.generateCore), so rows and cols
+                // are frequently *not* equal - a long, narrow walk can crop
+                // to something like 3 cols x 11 rows. Sizing purely off
+                // width let a cell size that fit 3 columns perfectly blow
+                // the *height* (11 rows at that size) far past the space
+                // actually available, so the grid overflowed its box and
+                // rendered as an oversized, cropped-looking "zoomed in"
+                // mess - most visible on Zen/Timed since every level there
+                // is procedurally generated (Classic's 3 handcrafted levels
+                // are all a fixed 5x5, which happens to hide this). Now the
+                // available height is measured too, and cellPx is capped by
+                // whichever dimension (width or height) is tighter for
+                // *this* level's actual shape.
+                val availableHeightPx = with(density) { maxHeight.toPx() }
                 val gapPx = with(density) { CELL_GAP.toPx() }
                 val maxCellPx = with(density) { MAX_CELL_SIZE.toPx() }
                 val minCellPx = with(density) { MIN_CELL_SIZE.toPx() }
 
-                val cellPx = ((availableWidthPx - gapPx * (level.cols - 1)) / level.cols)
+                val cellPxForWidth = (availableWidthPx - gapPx * (level.cols - 1)) / level.cols
+                val cellPxForHeight = (availableHeightPx - gapPx * (level.rows - 1)) / level.rows
+                val cellPx = minOf(cellPxForWidth, cellPxForHeight)
                     .coerceAtMost(maxCellPx)
                     .coerceAtLeast(minCellPx)
                 val stridePx = cellPx + gapPx
@@ -1073,39 +1101,117 @@ private fun ConfettiBurst(modifier: Modifier = Modifier) {
 /**
  * Continue resumes exactly where the player left off (the timer never
  * moved while this was up); Go to Home exits to mode selection. Tapping
- * outside the dialog or pressing system back both count as "Continue" via
+ * the scrim or pressing system back both count as "Continue" via
  * onDismissRequest, since a real Dialog window intercepts back itself -
  * the BackHandler in GameScreen only needs to handle the *unpaused* case.
+ *
+ * Redesigned as a full-screen overlay instead of a boxed AlertDialog: a
+ * dark scrim over the whole screen (so the paused grid is still faintly
+ * visible underneath, not hidden behind a small opaque card) with a
+ * translucent, bevel-edged "glass" panel floating in the center, and both
+ * actions rendered as real MetallicButtons in the gold/bronze accents
+ * instead of one metallic button next to a plain text link - matching the
+ * rest of the app's premium metal-on-dark language instead of standing out
+ * as a generic system dialog. `usePlatformDefaultWidth = false` is what
+ * lets the Dialog's content claim the full screen instead of Android's
+ * default dialog-sized box.
+ *
+ * Note: this fakes "glass" via a translucent gradient + a soft bevel edge
+ * rather than a true gaussian blur of the grid behind it - genuine
+ * backdrop blur needs either minSdk 31's RenderEffect or a small blur
+ * library (e.g. Haze), neither of which this project currently pulls in.
  */
 @Composable
 private fun PauseMenuDialog(
     onContinue: () -> Unit,
     onGoHome: () -> Unit
 ) {
-    AlertDialog(
+    Dialog(
         onDismissRequest = onContinue,
-        containerColor = SurfaceCardElevated,
-        shape = LoopLineShapes.dialog,
-        modifier = Modifier.metallicBevel(cornerDp = LoopLineShapes.dialogCornerDp),
-        title = {
-            Text("Paused", style = MaterialTheme.typography.headlineMedium, color = TextPrimary)
-        },
-        text = {
-            Text(
-                "The clock's stopped \u2014 take your time.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary
-            )
-        },
-        confirmButton = {
-            MetallicButton(text = "Continue", onClick = onContinue)
-        },
-        dismissButton = {
-            TextButton(onClick = onGoHome) {
-                Text("Go to Home", color = TextSecondary)
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.6f))
+                // Tapping anywhere on the dimmed scrim (outside the panel)
+                // behaves like tapping outside an AlertDialog used to -
+                // it resumes play. No ripple, since this is a full-bleed
+                // scrim rather than a discrete tappable element.
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onContinue
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 340.dp)
+                    .fillMaxWidth(0.86f)
+                    // Swallow taps on the panel itself so they don't fall
+                    // through to the scrim's onContinue behind it.
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    )
+                    .shadow(
+                        elevation = 28.dp,
+                        shape = LoopLineShapes.dialog,
+                        ambientColor = Gold.copy(alpha = 0.25f),
+                        spotColor = Gold.copy(alpha = 0.3f)
+                    )
+                    .clip(LoopLineShapes.dialog)
+                    // The "glass": a mostly-transparent light-to-dark
+                    // gradient over the dark scrim reads as a frosted pane
+                    // even without a real blur behind it.
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.10f),
+                                SurfaceCardElevated.copy(alpha = 0.78f)
+                            )
+                        )
+                    )
+                    .metallicBevel(
+                        cornerDp = LoopLineShapes.dialogCornerDp,
+                        highlight = Color.White.copy(alpha = 0.5f),
+                        shadow = Color.Black.copy(alpha = 0.4f),
+                        strokeWidthDp = 1.5.dp
+                    )
+                    .padding(horizontal = 28.dp, vertical = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                GradientText(
+                    text = "Paused",
+                    brush = goldBrush(),
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    "The clock's stopped \u2014 take your time.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(28.dp))
+                MetallicButton(
+                    text = "Continue",
+                    onClick = onContinue,
+                    accentKey = "gold",
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                MetallicButton(
+                    text = "Go to Home",
+                    onClick = onGoHome,
+                    accentKey = "copper",
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
-    )
+    }
 }
 
 /**

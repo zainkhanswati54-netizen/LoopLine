@@ -32,6 +32,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.loopline.puzzle.ui.components.ComingSoonDialog
 import com.loopline.puzzle.ui.components.DailyChallengeBanner
 import com.loopline.puzzle.ui.components.FeaturedModeBanner
 import com.loopline.puzzle.ui.components.GradientText
@@ -48,6 +52,11 @@ data class GameMode(
     val icon: ImageVector,
     val accentKey: String,
     val badgeText: String,
+    // False greys the card out (no pulse, dim "Coming soon" badge) and
+    // swaps its tap behavior from actually launching the mode to showing
+    // ComingSoonDialog instead - see moreCards below for why Zen/Timed are
+    // currently disabled.
+    val enabled: Boolean = true,
     val onClick: (HomeActions) -> Unit
 )
 
@@ -63,15 +72,17 @@ class HomeActions(
 
 private val featuredMode = Triple("Classic", "Connect every tile in one stroke", Icons.Filled.GridOn)
 
-// Everything here is a real, live screen now - Zen and Timed are playable
-// modes (see GameScreen's isZen/isTimed branching), and Settings/
-// Statistics/Leaderboard are real screens too. They share this one grid
-// and the same ModeCard styling on purpose, at the user's request, instead
-// of gameplay modes and utility screens looking like two different kinds
-// of thing.
+// Zen and Timed are temporarily disabled (see the grid-sizing bug fixed in
+// GameScreen - both modes generate their levels the same procedural way,
+// so they were the most likely to hit it) - greyed out with a "Coming
+// soon" badge and no-op instead of actually launching the mode. Settings/
+// Statistics/Leaderboard are real, live screens, sharing this one grid and
+// the same ModeCard styling on purpose, at the user's request, instead of
+// gameplay modes and utility screens looking like two different kinds of
+// thing.
 private val moreCards = listOf(
-    GameMode("Zen", "No timer, no pressure", Icons.Filled.Spa, "rosegold", "Play") { it.onPlayZen() },
-    GameMode("Timed", "Beat the clock", Icons.Filled.Timer, "copper", "Play") { it.onPlayTimed() },
+    GameMode("Zen", "No timer, no pressure", Icons.Filled.Spa, "rosegold", "Coming soon", enabled = false) { it.onPlayZen() },
+    GameMode("Timed", "Beat the clock", Icons.Filled.Timer, "copper", "Coming soon", enabled = false) { it.onPlayTimed() },
     GameMode("Settings", "Sound, vibration, reset progress", Icons.Filled.Settings, "gold", "Open") { it.onOpenSettings() },
     GameMode("Statistics", "Levels, streaks, best times", Icons.Filled.BarChart, "copper", "Open") { it.onOpenStatistics() },
     GameMode("Leaderboard", "Your personal best runs", Icons.Filled.Leaderboard, "rosegold", "Open") { it.onOpenLeaderboard() },
@@ -90,6 +101,11 @@ fun HomeScreen(
     val actions = remember(onPlayZen, onPlayTimed, onOpenSettings, onOpenStatistics, onOpenLeaderboard) {
         HomeActions(onPlayZen, onPlayTimed, onOpenSettings, onOpenStatistics, onOpenLeaderboard)
     }
+
+    // Which disabled mode (if any) the player just tapped - holding the
+    // title here (rather than a plain Boolean) lets one dialog instance
+    // serve every disabled card instead of needing a flag per card.
+    var comingSoonTitle by remember { mutableStateOf<String?>(null) }
 
     Box(
         modifier = Modifier
@@ -166,11 +182,25 @@ fun HomeScreen(
                         icon = mode.icon,
                         accentKey = mode.accentKey,
                         badgeText = mode.badgeText,
-                        badgeHighlighted = true,
-                        onClick = { mode.onClick(actions) }
+                        // Only a live, tappable mode gets the breathing
+                        // pulse - a disabled one sits still and reads as
+                        // secondary, same treatment ModeCard already gives
+                        // any non-highlighted card.
+                        badgeHighlighted = mode.enabled,
+                        onClick = {
+                            if (mode.enabled) mode.onClick(actions) else comingSoonTitle = mode.title
+                        }
                     )
                 }
             }
+        }
+
+        comingSoonTitle?.let { title ->
+            ComingSoonDialog(
+                onDismiss = { comingSoonTitle = null },
+                title = "$title \u2014 coming soon",
+                message = "$title is still being polished. Stay tuned!"
+            )
         }
     }
 }
