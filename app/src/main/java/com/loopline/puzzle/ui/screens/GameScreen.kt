@@ -324,6 +324,39 @@ fun GameScreen(
     // right before the next level loads itself.
     val tileExitProgress = remember(levelId) { Animatable(0f) }
 
+    // Drives the grid's "materializing" entrance: on a fresh level, tiles
+    // used to just snap into view instantly with zero animation, which felt
+    // flat next to how much motion the rest of the board has once play
+    // starts. This animates 0->1 once per level, and the draw loop below
+    // (see maxEntranceDistance/CellGeometry usage) staggers each tile's
+    // pop-in by its own distance from the start cell, so the shape reads
+    // as rippling outward from the start rather than all tiles fading in
+    // in lockstep.
+    val gridEntrance = remember(levelId) { Animatable(0f) }
+    LaunchedEffect(levelId) {
+        gridEntrance.snapTo(0f)
+        gridEntrance.animateTo(1f, animationSpec = tween(durationMillis = 480, easing = LinearEasing))
+    }
+    val maxEntranceDistance = remember(level) {
+        level.cells.maxOfOrNull { kotlin.math.abs(it.row - level.start.row) + kotlin.math.abs(it.col - level.start.col) }
+            ?.coerceAtLeast(1) ?: 1
+    }
+
+    // A slow, quiet pulse on whichever idle tiles are a legal next move
+    // from the end of the current stroke - a passive "here's where you can
+    // go" cue that's always on rather than something the player has to
+    // request, distinct from (and much subtler than) the gold Hint ring.
+    val nextMoveTransition = rememberInfiniteTransition(label = "nextMovePulse")
+    val nextMovePulse by nextMoveTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1100, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "nextMovePulse"
+    )
+
     // A small light that continuously travels along the completed stroke -
     // ambient motion so the path reads as "alive" even between drags,
     // rather than only reacting the instant a tile is touched.
@@ -793,52 +826,91 @@ fun GameScreen(
                     level.cells.forEach { cell ->
                         val geo = cellGeometry.getValue(cell)
                         val inPath = cell in path
-                        if (inPath) {
-                            // The tile that was *just* connected bounces in
-                            // (spring overshoot on connectProgress carries
-                            // it slightly past 1.0 before settling) instead
-                            // of simply appearing filled.
-                            val connectScale = if (cell == justConnectedCell) {
-                                0.6f + connectProgress.value * 0.4f
+                        val tileCenter = Offset(geo.topLeft.x + cellPx / 2f, geo.topLeft.y + cellPx / 2f)
+
+                        // This tile's own slice of gridEntrance: cells
+                        // further from the start wait a little longer to
+                        // pop in, up to 60% of the total duration reserved
+                        // for that spread, so the whole shape ripples
+                        // outward from the start dot instead of the entire
+                        // grid fading in as one flat block.
+                        val entranceDistance = kotlin.math.abs(cell.row - level.start.row) + kotlin.math.abs(cell.col - level.start.col)
+                        val entranceDelay = (entranceDistance.toFloat() / maxEntranceDistance) * 0.6f
+                        val entranceT = ((gridEntrance.value - entranceDelay) / (1f - entranceDelay)).coerceIn(0f, 1f)
+                        // A touch of overshoot (peaks just past 1.0 before
+                        // settling) so the pop-in has the same springy
+                        // character as the per-tile connect bounce below,
+                        // rather than a flat linear grow. Standard
+                        // "ease-out-back" curve: overshoots past 1.0 near
+                        // the end, lands exactly on 1.0 at t=1.
+                        val entranceScale = if (entranceT < 1f) {
+                            val c1 = 1.70158f
+                            val c3 = c1 + 1f
+                            val t = entranceT - 1f
+                            (1f + c3 * t * t * t + c1 * t * t).coerceAtLeast(0f)
+                        } else 1f
+
+                        scale(scale = entranceScale, pivot = tileCenter) {
+                            if (inPath) {
+                                // The tile that was *just* connected bounces in
+                                // (spring overshoot on connectProgress carries
+                                // it slightly past 1.0 before settling) instead
+                                // of simply appearing filled.
+                                val connectScale = if (cell == justConnectedCell) {
+                                    0.6f + connectProgress.value * 0.4f
+                                } else {
+                                    1f
+                                }
+                                // Every filled tile shrinks toward 0 together
+                                // once the level is solved - the "pop out"
+                                // beat that plays alongside the success sound
+                                // right before the next level loads.
+                                val popScale = connectScale * (1f - tileExitProgress.value)
+                                scale(scale = popScale, pivot = tileCenter) {
+                                    drawRoundRect(brush = accentBrush, topLeft = geo.topLeft, size = geo.size, cornerRadius = geo.corner)
+                                    drawPath(
+                                        path = geo.filledBevelPath,
+                                        brush = geo.filledBevelBrush,
+                                        style = Stroke(width = cellPx * 0.045f)
+                                    )
+                                    // The "glow" micro-interaction: a bright
+                                    // white overlay flashes in at full
+                                    // strength the instant the tile connects
+                                    // (burstProgress = 0) and fades out over
+                                    // the same ~450ms as the bounce, on top of
+                                    // the scale-up/scale-down above - a quick
+                                    // brightness pop rather than a flat fill.
+                                    if (cell == justConnectedCell && burstProgress.value < 1f) {
+                                        drawRoundRect(
+                                            color = Color.White.copy(alpha = (1f - burstProgress.value) * 0.55f),
+                                            topLeft = geo.topLeft,
+                                            size = geo.size,
+                                            cornerRadius = geo.corner
+                                        )
+                                    }
+                                }
                             } else {
-                                1f
-                            }
-                            // Every filled tile shrinks toward 0 together
-                            // once the level is solved - the "pop out"
-                            // beat that plays alongside the success sound
-                            // right before the next level loads.
-                            val popScale = connectScale * (1f - tileExitProgress.value)
-                            val tileCenter = Offset(geo.topLeft.x + cellPx / 2f, geo.topLeft.y + cellPx / 2f)
-                            scale(scale = popScale, pivot = tileCenter) {
-                                drawRoundRect(brush = accentBrush, topLeft = geo.topLeft, size = geo.size, cornerRadius = geo.corner)
+                                drawRoundRect(color = TileIdle, topLeft = geo.topLeft, size = geo.size, cornerRadius = geo.corner)
                                 drawPath(
-                                    path = geo.filledBevelPath,
-                                    brush = geo.filledBevelBrush,
-                                    style = Stroke(width = cellPx * 0.045f)
+                                    path = geo.idleBevelPath,
+                                    brush = geo.idleBevelBrush,
+                                    style = Stroke(width = cellPx * 0.035f)
                                 )
-                                // The "glow" micro-interaction: a bright
-                                // white overlay flashes in at full
-                                // strength the instant the tile connects
-                                // (burstProgress = 0) and fades out over
-                                // the same ~450ms as the bounce, on top of
-                                // the scale-up/scale-down above - a quick
-                                // brightness pop rather than a flat fill.
-                                if (cell == justConnectedCell && burstProgress.value < 1f) {
+                                // A quiet always-on cue: idle tiles that are
+                                // a legal next step from the current stroke
+                                // end breathe a soft accent wash, rather
+                                // than sitting visually identical to every
+                                // other untouched tile until the player
+                                // tries them.
+                                if (!isComplete && cell.isAdjacentTo(path.last())) {
                                     drawRoundRect(
-                                        color = Color.White.copy(alpha = (1f - burstProgress.value) * 0.55f),
+                                        color = accent.copy(alpha = 0.10f + 0.16f * nextMovePulse),
                                         topLeft = geo.topLeft,
                                         size = geo.size,
                                         cornerRadius = geo.corner
                                     )
                                 }
                             }
-                        } else {
-                            drawRoundRect(color = TileIdle, topLeft = geo.topLeft, size = geo.size, cornerRadius = geo.corner)
-                            drawPath(
-                                path = geo.idleBevelPath,
-                                brush = geo.idleBevelBrush,
-                                style = Stroke(width = cellPx * 0.035f)
-                            )
                         }
                         if (cell == hintCell) {
                             drawRoundRect(
@@ -977,12 +1049,6 @@ fun GameScreen(
 
                 if (isComplete) {
                     ConfettiBurst(modifier = Modifier.width(gridWidthDp).height(gridHeightDp))
-                    CompletionCallout(
-                        showPerfect = showPerfectBadge,
-                        milestoneText = streakMilestoneText,
-                        accent = accent,
-                        modifier = Modifier.width(gridWidthDp).height(gridHeightDp)
-                    )
                 }
             }
         }
@@ -1053,6 +1119,27 @@ fun GameScreen(
                     requestHint()
                 },
                 onDismiss = { showNeedHelp = false }
+            )
+        }
+
+        // The "you solved it" callout used to float dead-center over the
+        // grid, right where the tiles had just shrunk away - reading as an
+        // awkward little card stranded in empty space. It now rides in as
+        // a compact banner just under the header instead, out of the
+        // grid's way entirely, so the celebration reads as "layered on top
+        // of the screen" rather than "replacing the puzzle".
+        AnimatedVisibility(
+            visible = isComplete && (showPerfectBadge || streakMilestoneText != null),
+            enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 2 }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it / 2 }),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 118.dp)
+        ) {
+            CompletionToast(
+                showPerfect = showPerfectBadge,
+                milestoneText = streakMilestoneText,
+                accent = accent
             )
         }
     }
@@ -1308,48 +1395,74 @@ private fun FillProgressBar(
 }
 
 /**
- * The text half of the completion moment, layered over the grid alongside
- * [ConfettiBurst]: a bouncy "Perfect!" stamp when the attempt had zero
- * wrong touches and zero hints, and/or a streak-milestone line underneath
- * it. Either, both, or neither can show depending on how the level went -
- * a merely-completed level (imperfect, no milestone) still gets its
- * confetti but no text, so this doesn't cheapen itself by firing on every
- * single solve.
+ * The text half of the completion moment - previously a centered card
+ * layered directly over the grid (right where the tiles had just shrunk
+ * away, so it read as a card stranded in empty space). Now a compact
+ * pill-shaped banner meant to live just under the header instead (see the
+ * call site in [GameScreen]), out of the grid's way entirely.
+ *
+ * A leading badge carries the "reward" visual - a filled accent circle
+ * with a bevel ring and a small flame glyph if there's a streak, a plain
+ * checkmark otherwise - next to a single line of text that fits "PERFECT"
+ * and/or the milestone on one row instead of stacking them as two
+ * centered lines. Either, both, or neither of [showPerfect]/[milestoneText]
+ * can be present depending on how the level went; a merely-completed
+ * level (imperfect, no milestone) still gets its confetti but no banner,
+ * so this doesn't cheapen itself by firing on every single solve.
  */
 @Composable
-private fun CompletionCallout(
+private fun CompletionToast(
     showPerfect: Boolean,
     milestoneText: String?,
     accent: Color,
     modifier: Modifier = Modifier
 ) {
     if (!showPerfect && milestoneText == null) return
-    val pop = remember { Animatable(0f) }
+    val pop = remember { Animatable(0.7f) }
     LaunchedEffect(Unit) {
         pop.animateTo(1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium))
     }
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Column(
+    Row(
+        modifier = modifier
+            .scale(pop.value)
+            .shadow(elevation = 10.dp, shape = LoopLineShapes.chip, ambientColor = accent, spotColor = accent)
+            .clip(LoopLineShapes.chip)
+            .background(SurfaceCardElevated.copy(alpha = 0.96f))
+            .metallicBevel(cornerDp = 999.dp, highlight = accent.copy(alpha = 0.65f))
+            .padding(start = 10.dp, end = 20.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
             modifier = Modifier
-                .scale(pop.value)
-                .clip(LoopLineShapes.card)
-                .background(SurfaceCardElevated.copy(alpha = 0.92f))
-                .metallicBevel(cornerDp = LoopLineShapes.cardCornerDp, highlight = accent.copy(alpha = 0.6f))
-                .padding(horizontal = 24.dp, vertical = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(accent.copy(alpha = 0.95f), accent.copy(alpha = 0.55f))
+                    )
+                ),
+            contentAlignment = Alignment.Center
         ) {
+            Text(
+                text = if (milestoneText != null) "\uD83D\uDD25" else "\u2713",
+                style = MaterialTheme.typography.titleSmall,
+                color = Color.White
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column {
             if (showPerfect) {
                 Text(
-                    text = "PERFECT",
-                    style = MaterialTheme.typography.headlineMedium,
+                    text = "Perfect!",
+                    style = MaterialTheme.typography.titleMedium,
                     color = accent
                 )
             }
             if (milestoneText != null) {
                 Text(
                     text = milestoneText,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
                 )
             }
         }

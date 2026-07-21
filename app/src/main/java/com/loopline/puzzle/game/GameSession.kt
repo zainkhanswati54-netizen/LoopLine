@@ -207,17 +207,16 @@ object GameSession {
         return idCounter
     }
 
-    /** [levelNumber] is the global Classic-track number; the tier (and the
-     * curve math inside [LevelGenerator.generate]) is derived from it via
-     * [Difficulty.forLevel], and the level passed to the generator is
-     * re-based to "levels since this tier began" via [Difficulty.levelWithinTier]
-     * so each tier's curve (authored assuming it starts at 1) still ramps
-     * the same way it did when tiers were separate picker tracks. */
+    /** [levelNumber] is the global Classic-track number. [Difficulty.forLevel]
+     * only picks which *label* (Easy/Normal/Hard) this level shows in the
+     * header and gets bucketed under for stats - the actual grid-size/fill
+     * curve inside [LevelGenerator.generate] is driven by this same global
+     * [levelNumber] directly (see [Difficulty.scaledConfig]), so the puzzle
+     * keeps growing across a tier boundary instead of resetting back down. */
     private fun generateAndStore(levelNumber: Int): Level {
         val tier = Difficulty.forLevel(levelNumber)
-        val levelInTier = tier.levelWithinTier(levelNumber)
         val accentKey = accentCycle[(levelNumber - 1).mod(accentCycle.size)]
-        val generated = LevelGenerator.generate(tier, levelInTier, accentKey)
+        val generated = LevelGenerator.generate(tier, levelNumber, accentKey)
         val stored = generated.copy(id = nextId(), title = "Level $levelNumber")
         cache[stored.id] = stored
         return stored
