@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -404,7 +405,15 @@ fun GameScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) {
+            // Navigating to the next level (or back to Home after Daily
+            // Challenge) pops this screen's nav backstack entry, and that
+            // entry's own lifecycle fires ON_STOP the moment it's no longer
+            // the topmost destination - even though the app itself never
+            // left the foreground. Without the isComplete guard, that
+            // false-positive ON_STOP set isPaused = true a split second
+            // before this screen was disposed, flashing the Pause dialog
+            // over the confetti during every level transition.
+            if (event == Lifecycle.Event.ON_STOP && !isComplete) {
                 isPaused = true
                 persistProgress()
             }
@@ -931,9 +940,18 @@ fun GameScreen(
         // centered grid on most screen heights. Full-width, equal-weight
         // MetallicButtons read as deliberate primary actions rather than
         // an afterthought tucked into the top bar.
+        //
+        // The app draws edge-to-edge (see MainActivity's enableEdgeToEdge),
+        // so without navigationBarsPadding() here this row sat flush
+        // against - or partly behind - the 3-button/gesture nav bar on
+        // real devices, even though it looked fine in a preview with no
+        // system bars. navigationBarsPadding() adds exactly however much
+        // inset that specific device needs; the 20dp below it is the
+        // row's own visual breathing room on top of that.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 20.dp)
         ) {
             val hintsLeft = MAX_HINTS_PER_LEVEL - hintsUsed

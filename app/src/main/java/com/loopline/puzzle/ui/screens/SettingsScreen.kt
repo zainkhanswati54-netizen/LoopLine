@@ -1,6 +1,9 @@
 package com.loopline.puzzle.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,13 +11,23 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.PrivacyTip
+import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -53,6 +66,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     var vibrationEnabled by remember { mutableStateOf(SettingsStore.vibrationEnabled(context)) }
     var showResetConfirm by remember { mutableStateOf(false) }
     var showResetDone by remember { mutableStateOf(false) }
+    var showPrivacyPolicy by remember { mutableStateOf(false) }
+    var showTerms by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -73,7 +88,10 @@ fun SettingsScreen(onBack: () -> Unit) {
         Spacer(modifier = Modifier.height(24.dp))
 
         Column(
-            modifier = Modifier.padding(horizontal = 24.dp),
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             SettingToggleRow(
@@ -98,6 +116,76 @@ fun SettingsScreen(onBack: () -> Unit) {
                     SettingsStore.setVibrationEnabled(context, it)
                 }
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "ABOUT",
+                style = MaterialTheme.typography.labelMedium,
+                color = TextSecondary
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(LoopLineShapes.card)
+                    .background(cardSurfaceBrush())
+                    .metallicBevel(cornerDp = LoopLineShapes.cardCornerDp)
+            ) {
+                InfoRow(
+                    icon = Icons.Filled.PrivacyTip,
+                    title = "Privacy Policy",
+                    onClick = { showPrivacyPolicy = true }
+                )
+                InfoRow(
+                    icon = Icons.Filled.Article,
+                    title = "Terms of Service",
+                    onClick = { showTerms = true }
+                )
+                InfoRow(
+                    icon = Icons.Filled.Star,
+                    title = "Rate LoopLine",
+                    onClick = {
+                        val uri = Uri.parse("market://details?id=${context.packageName}")
+                        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                            setPackage("com.android.vending")
+                        }
+                        runCatching { context.startActivity(intent) }.onFailure {
+                            // Play Store app isn't installed (e.g. an emulator, or
+                            // a device without Google Play) - fall back to the
+                            // plain web listing in whatever browser is available.
+                            val webUri = Uri.parse("https://play.google.com/store/apps/details?id=${context.packageName}")
+                            context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
+                        }
+                    }
+                )
+                InfoRow(
+                    icon = Icons.Filled.Share,
+                    title = "Share with a friend",
+                    onClick = {
+                        val shareText = "Try LoopLine - a one-stroke tile puzzle game: " +
+                            "https://play.google.com/store/apps/details?id=${context.packageName}"
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, shareText)
+                        }
+                        context.startActivity(Intent.createChooser(sendIntent, "Share LoopLine"))
+                    }
+                )
+                InfoRow(
+                    icon = Icons.Filled.Email,
+                    title = "Contact / Feedback",
+                    isLast = true,
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_SENDTO).apply {
+                            data = Uri.parse("mailto:")
+                            putExtra(Intent.EXTRA_EMAIL, arrayOf("support@loopline.game"))
+                            putExtra(Intent.EXTRA_SUBJECT, "LoopLine feedback")
+                        }
+                        runCatching { context.startActivity(intent) }
+                    }
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -138,6 +226,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary
             )
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 
@@ -193,7 +282,124 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
         )
     }
+
+    if (showPrivacyPolicy) {
+        LegalTextDialog(
+            title = "Privacy Policy",
+            body = PRIVACY_POLICY_TEXT,
+            onDismiss = { showPrivacyPolicy = false }
+        )
+    }
+
+    if (showTerms) {
+        LegalTextDialog(
+            title = "Terms of Service",
+            body = TERMS_OF_SERVICE_TEXT,
+            onDismiss = { showTerms = false }
+        )
+    }
 }
+
+@Composable
+private fun InfoRow(
+    icon: ImageVector,
+    title: String,
+    isLast: Boolean = false,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        androidx.compose.material3.Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = TextSecondary,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            color = TextPrimary,
+            modifier = Modifier.weight(1f)
+        )
+        androidx.compose.material3.Icon(
+            imageVector = Icons.Filled.ChevronRight,
+            contentDescription = null,
+            tint = TextSecondary
+        )
+    }
+    if (!isLast) {
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .padding(horizontal = 20.dp)
+                .background(TextSecondary.copy(alpha = 0.12f))
+        )
+    }
+}
+
+@Composable
+private fun LegalTextDialog(title: String, body: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceCardElevated,
+        shape = LoopLineShapes.dialog,
+        modifier = Modifier.metallicBevel(cornerDp = LoopLineShapes.dialogCornerDp),
+        title = { Text(title, style = MaterialTheme.typography.headlineSmall, color = TextPrimary) },
+        text = {
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState())
+            )
+        },
+        confirmButton = {
+            MetallicButton(text = "Close", accentKey = "gold", onClick = onDismiss)
+        }
+    )
+}
+
+/**
+ * Placeholder legal copy so the app isn't shipping with dead menu items.
+ * This is a reasonable starting template for a simple offline single-player
+ * game with no accounts, no ads, and no analytics SDK - but it isn't legal
+ * advice, and the contact address below is a placeholder. Swap in your own
+ * support email and have someone review the actual text before shipping to
+ * the Play Store, especially if that changes (ads, analytics, accounts,
+ * a real online leaderboard, etc).
+ */
+private const val PRIVACY_POLICY_TEXT = """LoopLine is a single-player puzzle game. It does not require an account, does not collect personal information, and does not use analytics or advertising SDKs.
+
+All game data - your level progress, best times, hint usage, settings, and Daily Challenge streak - is stored only on your device, using Android's local app storage. Nothing is uploaded to a server, and nothing is shared with third parties.
+
+Uninstalling the app, or using "Reset everything" in Settings, permanently deletes this local data.
+
+If a future version of LoopLine adds online features (such as a shared leaderboard), this policy will be updated before that feature is released, and you'll be able to review the change here.
+
+Questions about this policy can be sent using "Contact / Feedback" above."""
+
+private const val TERMS_OF_SERVICE_TEXT = """By playing LoopLine, you agree to the following:
+
+1. License: You're granted a personal, non-transferable license to install and play LoopLine for your own entertainment. The game and its assets remain the property of their creator.
+
+2. No warranty: LoopLine is provided "as is," without warranty of any kind. While care is taken to keep it working correctly, it's not guaranteed to be bug-free or uninterrupted.
+
+3. Local data: Your progress is stored locally on your device only (see the Privacy Policy above). The developer isn't responsible for data lost due to uninstalling the app, switching devices, or device failure.
+
+4. Acceptable use: Don't reverse-engineer, redistribute, or resell the app outside of what the platform (e.g. Google Play) you downloaded it from allows.
+
+5. Changes: These terms may be updated in future versions; continuing to play after an update means you accept the revised terms.
+
+Questions about these terms can be sent using "Contact / Feedback" above."""
 
 @Composable
 private fun SettingToggleRow(

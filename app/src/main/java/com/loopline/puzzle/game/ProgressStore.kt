@@ -111,6 +111,16 @@ object ProgressStore {
         return (sum / count).toInt()
     }
 
+    /**
+     * Total seconds spent actively solving levels, across every difficulty.
+     * Reuses the same sum-per-difficulty values [recordSolveDuration] already
+     * keeps for the average, rather than tracking a separate running total.
+     */
+    fun totalPlayTimeSeconds(context: Context): Long {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return Difficulty.entries.sumOf { prefs.getLong("solve_seconds_sum_${it.name}", 0L) }
+    }
+
     // ---- Personal-best solve times (Leaderboard screen) ----
     // There's no server behind this app, so a "Leaderboard" can only
     // honestly show the player's own best runs, not other people's -

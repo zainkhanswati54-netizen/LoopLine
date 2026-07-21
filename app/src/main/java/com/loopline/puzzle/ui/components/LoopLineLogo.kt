@@ -10,13 +10,10 @@ import androidx.compose.ui.res.painterResource
 import com.loopline.puzzle.R
 
 /**
- * The LoopLine mark - the ornate gold circular badge (single-stroke path
- * through a 3x3 tile grid, framed in a Celtic-knot-style ring) supplied as
- * the app's brand image, used on Splash and Home.
- *
- * This used to be entirely code-drawn (Canvas). Swapped for the bundled
- * image because the filigree ring is a hand-designed illustration, not
- * something worth faithfully reproducing in draw calls.
+ * The LoopLine mark, shown on Splash and Home. Uses the same source image
+ * as the app's launcher icon (see drawable-nodpi/ic_launcher_photo.png) so
+ * the in-app brand mark and the icon on the player's home screen actually
+ * match, instead of being two different designs.
  */
 @Composable
 fun LoopLineLogo(modifier: Modifier = Modifier) {
