@@ -1,13 +1,21 @@
 package com.loopline.puzzle.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -36,13 +44,22 @@ fun IconChipButton(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.88f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessHigh),
+        label = "iconChipPressScale"
+    )
     IconButton(
         onClick = {
             if (playTapSound) UiSoundPlayer.playTap(context)
             onClick()
         },
         enabled = enabled,
+        interactionSource = interactionSource,
         modifier = modifier
+            .scale(pressScale)
             .size(40.dp)
             .clip(CircleShape)
             .background(TextPrimary.copy(alpha = if (prominent) 0.08f else 0.05f))

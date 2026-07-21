@@ -141,6 +141,37 @@ object ProgressStore {
         }
     }
 
+    // ---- Perfect-solve streak (engagement) ----
+    // "Perfect" means: this level's stroke had zero wrong-tile touches and
+    // zero hints spent. Tracked globally (not per-difficulty/mode) so
+    // Classic/Zen/Timed/Daily all feed the same number - the streak is
+    // meant to read as "how many in a row have I nailed", not get diluted
+    // into four separate small counters nobody checks. A miss resets the
+    // current streak to 0 but never touches the best streak, so the best
+    // stays a permanent personal record to chase.
+
+    fun currentStreak(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt("streak_current", 0)
+    }
+
+    fun bestStreak(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt("streak_best", 0)
+    }
+
+    /** Returns the new current-streak value after applying this result. */
+    fun recordStreakResult(context: Context, perfect: Boolean): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val next = if (perfect) prefs.getInt("streak_current", 0) + 1 else 0
+        val best = maxOf(prefs.getInt("streak_best", 0), next)
+        prefs.edit()
+            .putInt("streak_current", next)
+            .putInt("streak_best", best)
+            .apply()
+        return next
+    }
+
     // ---- In-progress session persistence ----
 
     data class SavedSession(

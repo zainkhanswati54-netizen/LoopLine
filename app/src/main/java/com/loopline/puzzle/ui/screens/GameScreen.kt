@@ -7,6 +7,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
@@ -60,6 +61,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -100,6 +102,7 @@ import com.loopline.puzzle.game.SoundPlayer
 import com.loopline.puzzle.ui.components.GradientText
 import com.loopline.puzzle.ui.components.IconChipButton
 import com.loopline.puzzle.ui.components.MetallicButton
+import com.loopline.puzzle.ui.components.StreakChip
 import com.loopline.puzzle.ui.theme.Copper
 import com.loopline.puzzle.ui.theme.CopperHighlight
 import com.loopline.puzzle.ui.theme.Gold
@@ -311,6 +314,10 @@ fun GameScreen(
     val invalidFlash = remember(levelId) { Animatable(0f) }
     var shakeTrigger by remember(levelId) { mutableStateOf(0) }
     var lastInvalidCandidate by remember(levelId) { mutableStateOf<Cell?>(null) }
+    // Counts actual wrong-tile touches this attempt (not debounced, unlike
+    // shakeTrigger's dedupe) - a level only counts as "perfect" for the
+    // streak below if this stays 0 and no hint was used.
+    var wrongMoveCount by remember(levelId) { mutableStateOf(0) }
 
     // Drives the "level complete" tile shrink/pop-out: every filled tile
     // scales down toward 0 together, timed alongside the success sound,
@@ -359,6 +366,16 @@ fun GameScreen(
     var hintsUsed by remember(levelId) { mutableStateOf(restored?.hintsUsed ?: 0) }
     val coroutineScope = rememberCoroutineScope()
 
+    // Perfect-solve streak: loaded once (not per-levelId, so it survives
+    // across the auto-advance to the next level rather than resetting every
+    // time this composable re-keys) and bumped in the completion effect
+    // below. streakJustBumped/showPerfectBadge are the ephemeral "reward
+    // moment" flags read by the celebration overlay - true only for the
+    // ~500ms success window, then cleared by the next level's fresh state.
+    var streakCount by remember { mutableStateOf(ProgressStore.currentStreak(context)) }
+    var showPerfectBadge by remember(levelId) { mutableStateOf(false) }
+    var streakMilestoneText by remember(levelId) { mutableStateOf<String?>(null) }
+
     // One place that knows which session actually owns this level, so the
     // many call sites that need to persist progress (every connect, every
     // hint, every background) don't each have to re-derive it. The Daily
@@ -385,6 +402,7 @@ fun GameScreen(
         elapsedSeconds = 0
         hintCell = null
         hintsUsed = 0
+        wrongMoveCount = 0
     }
 
     LaunchedEffect(elapsedSeconds, isComplete, isTimed) {
@@ -459,6 +477,22 @@ fun GameScreen(
     LaunchedEffect(isComplete) {
         if (isComplete) {
             completionSeconds = elapsedSeconds
+
+            // Streak bookkeeping happens for every mode/level - a "perfect"
+            // solve (no wrong touches, no hints) extends it, anything else
+            // resets it to 0. Milestones (3, then every 5) get their own
+            // callout text so the streak reads as a series of small wins
+            // building up, not just a number that quietly changes.
+            val perfect = wrongMoveCount == 0 && hintsUsed == 0
+            val newStreak = ProgressStore.recordStreakResult(context, perfect)
+            streakCount = newStreak
+            showPerfectBadge = perfect
+            streakMilestoneText = when {
+                newStreak == 3 -> "3 in a row!"
+                newStreak > 0 && newStreak % 5 == 0 -> "$newStreak in a row! \uD83D\uDD25"
+                else -> null
+            }
+
             if (isDailyChallenge) {
                 DailyChallengeStore.recordCompletion(context, completionSeconds)
             } else if (sessionLevel != null) {
@@ -479,7 +513,7 @@ fun GameScreen(
             coroutineScope.launch {
                 tileExitProgress.animateTo(1f, animationSpec = tween(durationMillis = 420, easing = LinearEasing))
             }
-            delay(SUCCESS_ANIMATION_MILLIS)
+            delay(if (streakMilestoneText != null) SUCCESS_ANIMATION_MILLIS + 500L else SUCCESS_ANIMATION_MILLIS)
             when {
                 isDailyChallenge -> onBack()
                 playMode != null -> onNavigateToLevel(ModeSession.next(context, playMode).id)
@@ -577,6 +611,7 @@ fun GameScreen(
                 if (candidate != lastInvalidCandidate) {
                     lastInvalidCandidate = candidate
                     shakeTrigger += 1
+                    wrongMoveCount += 1
                     if (SettingsStore.vibrationEnabled(context)) {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                     }
@@ -654,6 +689,9 @@ fun GameScreen(
                     )
                 }
             }
+            if (streakCount > 0) {
+                StreakChip(streak = streakCount)
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -674,6 +712,14 @@ fun GameScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = if (isTimed && timeBudgetSeconds - elapsedSeconds <= 10) Copper else TextSecondary,
             modifier = Modifier.padding(start = 24.dp)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        FillProgressBar(
+            fraction = path.size.toFloat() / level.cellCount.toFloat(),
+            accentBrush = accentBrush,
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .fillMaxWidth()
         )
 
         // weight(1f) claims all the vertical space left over after the
@@ -931,6 +977,12 @@ fun GameScreen(
 
                 if (isComplete) {
                     ConfettiBurst(modifier = Modifier.width(gridWidthDp).height(gridHeightDp))
+                    CompletionCallout(
+                        showPerfect = showPerfectBadge,
+                        milestoneText = streakMilestoneText,
+                        accent = accent,
+                        modifier = Modifier.width(gridWidthDp).height(gridHeightDp)
+                    )
                 }
             }
         }
@@ -1172,13 +1224,13 @@ private fun ConfettiBurst(modifier: Modifier = Modifier) {
     }
     val particles = remember {
         val palette = listOf(Gold, GoldHighlight, Copper, CopperHighlight, RoseGold, RoseGoldHighlight)
-        List(28) {
+        List(44) {
             ConfettiParticle(
                 angle = Random.nextFloat() * 2f * Math.PI.toFloat(),
-                distance = 50f + Random.nextFloat() * 100f,
+                distance = 60f + Random.nextFloat() * 130f,
                 color = palette.random(),
                 isDiamond = Random.nextBoolean(),
-                sizeScale = 0.75f + Random.nextFloat() * 0.6f
+                sizeScale = 0.75f + Random.nextFloat() * 0.7f
             )
         }
     }
@@ -1216,6 +1268,84 @@ private fun ConfettiBurst(modifier: Modifier = Modifier) {
                 drawPath(path = diamond, color = particle.color.copy(alpha = alpha))
             } else {
                 drawCircle(color = particle.color.copy(alpha = alpha), radius = radius, center = Offset(x, y))
+            }
+        }
+    }
+}
+
+/**
+ * A thin, accent-filled bar tracking `path.size / cellCount`. Animates with
+ * a spring rather than a linear tween so each tile connected gives the bar
+ * a tiny satisfying overshoot-then-settle instead of a robotic fill - the
+ * same "juice" language as the tile bounce, just applied to progress as a
+ * whole rather than one cell at a time.
+ */
+@Composable
+private fun FillProgressBar(
+    fraction: Float,
+    accentBrush: Brush,
+    modifier: Modifier = Modifier
+) {
+    val animatedFraction by animateFloatAsState(
+        targetValue = fraction.coerceIn(0f, 1f),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "fillProgress"
+    )
+    Box(
+        modifier = modifier
+            .height(6.dp)
+            .clip(LoopLineShapes.chip)
+            .background(Color.White.copy(alpha = 0.08f))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(animatedFraction)
+                .clip(LoopLineShapes.chip)
+                .background(accentBrush)
+        )
+    }
+}
+
+/**
+ * The text half of the completion moment, layered over the grid alongside
+ * [ConfettiBurst]: a bouncy "Perfect!" stamp when the attempt had zero
+ * wrong touches and zero hints, and/or a streak-milestone line underneath
+ * it. Either, both, or neither can show depending on how the level went -
+ * a merely-completed level (imperfect, no milestone) still gets its
+ * confetti but no text, so this doesn't cheapen itself by firing on every
+ * single solve.
+ */
+@Composable
+private fun CompletionCallout(
+    showPerfect: Boolean,
+    milestoneText: String?,
+    accent: Color,
+    modifier: Modifier = Modifier
+) {
+    if (!showPerfect && milestoneText == null) return
+    val pop = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        pop.animateTo(1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium))
+    }
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Column(
+            modifier = Modifier.scale(pop.value),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (showPerfect) {
+                Text(
+                    text = "PERFECT",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = accent
+                )
+            }
+            if (milestoneText != null) {
+                Text(
+                    text = milestoneText,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextPrimary
+                )
             }
         }
     }

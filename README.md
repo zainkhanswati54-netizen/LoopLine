@@ -56,7 +56,34 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 - Completing a level plays a quick confetti burst, then a dialog with a **star rating** (based on solve time relative to puzzle size), **Next level** (fresh puzzle, same difficulty, slightly bigger every 5 levels), or **Change difficulty**.
 - Play is endless — no fixed level count.
 
-## Recent fixes (this update)
+## Recent fixes (this update, animation & engagement pass)
+
+- **Every `MetallicButton` in the app now compresses on press** (a spring
+  scale down to 0.94x, `MetallicButton.kt`) instead of relying on the
+  ripple alone for tactile feedback - one change, felt on every button
+  everywhere since it's the app's single shared button component.
+- **Screen-to-screen navigation now slides + fades** (`LoopLineNavGraph.kt`,
+  220ms) instead of cutting instantly between Home/Settings/Statistics/
+  Leaderboard/Game - forward navigation slides in from the right, back
+  navigation mirrors it in reverse.
+- **A perfect-solve streak** (`ProgressStore.currentStreak`/`bestStreak`):
+  a level counts as "perfect" if it was solved with zero wrong-tile
+  touches and zero hints. A gold flame chip in `GameScreen`'s header pops
+  with a bounce every time the streak extends, milestones (3, then every
+  5) get a callout on the win screen, and both the current and best streak
+  are now on the Statistics screen alongside the existing daily streak.
+- **The win moment got louder**: confetti went from 28 to 44 particles
+  with a wider spread, and a new `CompletionCallout` stamps a bouncy
+  "PERFECT" badge and/or the streak-milestone line over the grid during
+  the existing auto-advance window (which now runs ~500ms longer on a
+  milestone specifically so that text is actually readable, not just
+  flashed).
+- **A live fill-progress bar** under the tile counter (`FillProgressBar`)
+  - a thin accent-gradient bar that springs (slight overshoot, not a
+    linear tween) toward `path.size / cellCount` on every connect, so
+    progress reads visually and not just as a number.
+
+## Recent fixes (previous update)
 
 - **Zen and Timed are real, playable modes now**, not "coming soon" cards.
   Both are endless progressions of their own (`ModeSession`, a sibling of

@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.GridOn
@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.loopline.puzzle.game.FeatureFlags
+import com.loopline.puzzle.game.ProgressStore
 import com.loopline.puzzle.game.SettingsStore
 import com.loopline.puzzle.ui.components.DailyChallengeBanner
 import com.loopline.puzzle.ui.components.FeaturedModeBanner
@@ -47,6 +48,7 @@ import com.loopline.puzzle.ui.components.IconChipButton
 import com.loopline.puzzle.ui.components.LoopLineLogo
 import com.loopline.puzzle.ui.components.ModeCard
 import com.loopline.puzzle.ui.components.ShineText
+import com.loopline.puzzle.ui.components.StreakChip
 import com.loopline.puzzle.ui.theme.TextSecondary
 import com.loopline.puzzle.ui.theme.backgroundBrush
 import com.loopline.puzzle.ui.theme.goldBrush
@@ -146,6 +148,14 @@ fun HomeScreen(
                         color = TextSecondary
                     )
                 }
+                // Visible here (not just mid-game) so a returning player is
+                // reminded what they've got riding before they even tap
+                // Play - the same "don't lose the streak" pull that gets
+                // people to open habit apps daily.
+                val streak = remember { ProgressStore.currentStreak(context) }
+                if (streak > 0) {
+                    StreakChip(streak = streak, modifier = Modifier.padding(end = 8.dp))
+                }
                 IconChipButton(
                     icon = Icons.Filled.HelpOutline,
                     contentDescription = "How to play",
@@ -191,7 +201,7 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(moreCards()) { mode ->
+                itemsIndexed(moreCards()) { index, mode ->
                     ModeCard(
                         title = mode.title,
                         description = mode.description,
@@ -199,6 +209,7 @@ fun HomeScreen(
                         accentKey = mode.accentKey,
                         badgeText = mode.badgeText,
                         badgeHighlighted = true,
+                        appearIndex = index,
                         onClick = { mode.onClick(actions) }
                     )
                 }

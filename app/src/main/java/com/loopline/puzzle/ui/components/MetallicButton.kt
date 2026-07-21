@@ -1,15 +1,23 @@
 package com.loopline.puzzle.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -57,10 +65,25 @@ fun MetallicButton(
         Brush.linearGradient(listOf(Color.White.copy(alpha = 0.06f), Color.White.copy(alpha = 0.06f)))
     }
 
+    // A tactile "give" on press - the button compresses toward 0.94x with a
+    // snappy spring the instant a finger lands and springs back the instant
+    // it lifts, instead of the ripple alone standing in for tactile
+    // feedback. Cheap (one interaction source, one animated float) but it's
+    // the single micro-interaction that makes every tap in the app feel
+    // physically pressed rather than just clicked.
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.94f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessHigh),
+        label = "buttonPressScale"
+    )
+
     Box(
         modifier = modifier
+            .scale(pressScale)
             .shadow(
-                elevation = if (enabled) 10.dp else 0.dp,
+                elevation = if (enabled) (10.dp * pressScale) else 0.dp,
                 shape = LoopLineShapes.button,
                 ambientColor = accentColor.copy(alpha = 0.35f),
                 spotColor = accentColor.copy(alpha = 0.45f)
@@ -70,10 +93,14 @@ fun MetallicButton(
             .metallicBevel(cornerDp = LoopLineShapes.buttonCornerDp)
             .let {
                 if (enabled) {
-                    it.clickable(onClick = {
-                        if (playTapSound) UiSoundPlayer.playTap(context)
-                        onClick()
-                    })
+                    it.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = {
+                            if (playTapSound) UiSoundPlayer.playTap(context)
+                            onClick()
+                        }
+                    )
                 } else {
                     it
                 }

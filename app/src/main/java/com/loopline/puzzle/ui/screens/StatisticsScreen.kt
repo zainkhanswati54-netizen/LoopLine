@@ -138,6 +138,23 @@ fun StatisticsScreen(onBack: () -> Unit) {
                 )
             }
 
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                StatTile(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Filled.LocalFireDepartment,
+                    value = "${ProgressStore.currentStreak(context)}",
+                    label = "Current perfect streak",
+                    accentKey = "copper"
+                )
+                StatTile(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Filled.EmojiEvents,
+                    value = "${ProgressStore.bestStreak(context)}",
+                    label = "Best perfect streak",
+                    accentKey = "rosegold"
+                )
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(

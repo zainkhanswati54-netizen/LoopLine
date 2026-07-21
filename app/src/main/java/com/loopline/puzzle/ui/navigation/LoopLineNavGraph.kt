@@ -1,5 +1,10 @@
 package com.loopline.puzzle.ui.navigation
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
@@ -45,7 +50,25 @@ fun LoopLineNavGraph() {
     val navController = rememberNavController()
     val context = LocalContext.current
 
-    NavHost(navController = navController, startDestination = Routes.SPLASH) {
+    // A single shared transition set for the whole graph rather than one
+    // default (instant cut) - forward navigation slides the new screen in
+    // from the right while the old one fades+drifts left, and back
+    // navigation mirrors it in reverse. Small (220ms) and fade-backed so it
+    // reads as polish rather than something the player has to wait through
+    // on every tap.
+    val forwardEnter = slideInHorizontally(animationSpec = tween(220)) { it / 4 } + fadeIn(tween(220))
+    val forwardExit = slideOutHorizontally(animationSpec = tween(220)) { -it / 4 } + fadeOut(tween(220))
+    val backEnter = slideInHorizontally(animationSpec = tween(220)) { -it / 4 } + fadeIn(tween(220))
+    val backExit = slideOutHorizontally(animationSpec = tween(220)) { it / 4 } + fadeOut(tween(220))
+
+    NavHost(
+        navController = navController,
+        startDestination = Routes.SPLASH,
+        enterTransition = { forwardEnter },
+        exitTransition = { forwardExit },
+        popEnterTransition = { backEnter },
+        popExitTransition = { backExit }
+    ) {
         composable(Routes.SPLASH) {
             SplashScreen(
                 onFinished = {

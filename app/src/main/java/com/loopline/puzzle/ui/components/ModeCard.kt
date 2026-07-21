@@ -2,14 +2,20 @@ package com.loopline.puzzle.ui.components
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.StartOffsetType
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -20,11 +26,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.graphicsLayer
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -40,6 +48,7 @@ import com.loopline.puzzle.ui.theme.accentBrushFor
 import com.loopline.puzzle.ui.theme.accentColorFor
 import com.loopline.puzzle.ui.theme.cardSurfaceBrush
 import com.loopline.puzzle.ui.theme.metallicBevel
+import kotlinx.coroutines.delay
 
 @Composable
 fun ModeCard(
@@ -51,6 +60,13 @@ fun ModeCard(
     modifier: Modifier = Modifier,
     badgeText: String = "Coming soon",
     badgeHighlighted: Boolean = false,
+    // Staggers this card's one-time entrance (fade + rise + scale-in) by
+    // `appearIndex * 60ms` - called with the grid's item index so a row of
+    // cards cascades in left-to-right/top-to-bottom instead of every card
+    // on the screen popping in on the exact same frame. 0 (the default)
+    // means "appear immediately", which is what any caller not passing
+    // this explicitly gets - existing call sites are unaffected.
+    appearIndex: Int = 0,
     // Reserved slot rendered above the badge, e.g. a future Daily Puzzle
     // "resets in HH:MM:SS" countdown - left null today so every existing
     // card's layout is unchanged until that mode is wired up.
@@ -59,6 +75,26 @@ fun ModeCard(
     val accentColor = accentColorFor(accentKey)
     val accentBrush = accentBrushFor(accentKey)
     val context = LocalContext.current
+
+    // One-shot entrance: starts invisible and slightly below/smaller, then
+    // eases up to its resting position. Runs once per composition (i.e.
+    // once per time this card enters the grid), not on every recomposition.
+    val entrance = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        delay(appearIndex * 60L)
+        entrance.animateTo(1f, animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing))
+    }
+
+    // A tactile press-in on top of the ambient breathing pulse below - the
+    // two multiply together so a highlighted card can be gently breathing
+    // *and* still give a firm compress the instant it's tapped.
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessHigh),
+        label = "modeCardPressScale"
+    )
 
     // A slow, subtle breathing pulse - scale and glow tick to the same
     // phase - so the one truly playable card reads as tappable and alive.
@@ -83,7 +119,14 @@ fun ModeCard(
 
     Column(
         modifier = modifier
-            .scale(pulseScale)
+            .graphicsLayer {
+                // Entrance: fades/scales/rises in together; once entrance
+                // reaches 1 this block is a no-op every frame after.
+                alpha = entrance.value
+                scaleX = pulseScale * pressScale * (0.9f + entrance.value * 0.1f)
+                scaleY = scaleX
+                translationY = (1f - entrance.value) * 24f
+            }
             .shadow(
                 elevation = (if (badgeHighlighted) 16.dp else 5.dp) + (pulse * 4f).dp,
                 shape = LoopLineShapes.card,
@@ -93,10 +136,14 @@ fun ModeCard(
             .clip(LoopLineShapes.card)
             .background(cardSurfaceBrush())
             .metallicBevel(cornerDp = LoopLineShapes.cardCornerDp)
-            .clickable(onClick = {
-                UiSoundPlayer.playTap(context)
-                onClick()
-            })
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    UiSoundPlayer.playTap(context)
+                    onClick()
+                }
+            )
             .padding(18.dp)
             .height(158.dp)
     ) {
