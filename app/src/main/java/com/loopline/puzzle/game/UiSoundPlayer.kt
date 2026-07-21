@@ -21,6 +21,11 @@ import com.loopline.puzzle.R
 object UiSoundPlayer {
     private var pool: SoundPool? = null
     private var tapSoundId: Int = 0
+    // Same bug/fix as SoundPlayer: load() is async, so the very first tap
+    // sound of the whole app session (fired right as ensureLoaded() is
+    // first called) could silently not play if it landed before the pool
+    // finished decoding the clip.
+    private var tapSoundLoaded = false
 
     private fun ensureLoaded(context: Context) {
         if (pool != null) return
@@ -32,6 +37,9 @@ object UiSoundPlayer {
             .setMaxStreams(4)
             .setAudioAttributes(attributes)
             .build()
+        newPool.setOnLoadCompleteListener { _, _, status ->
+            if (status == 0) tapSoundLoaded = true
+        }
         tapSoundId = newPool.load(context.applicationContext, R.raw.button_tap, 1)
         pool = newPool
     }
@@ -43,6 +51,8 @@ object UiSoundPlayer {
     fun playTap(context: Context, volume: Float = 0.7f) {
         if (!SettingsStore.soundEnabled(context)) return
         ensureLoaded(context)
-        pool?.play(tapSoundId, volume, volume, 1, 0, 1f)
+        if (tapSoundLoaded) {
+            pool?.play(tapSoundId, volume, volume, 1, 0, 1f)
+        }
     }
 }

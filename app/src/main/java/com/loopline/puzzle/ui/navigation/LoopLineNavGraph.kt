@@ -23,8 +23,10 @@ import com.loopline.puzzle.ui.screens.LeaderboardScreen
 import com.loopline.puzzle.ui.screens.SettingsScreen
 import com.loopline.puzzle.ui.screens.SplashScreen
 import com.loopline.puzzle.ui.screens.StatisticsScreen
+import com.loopline.puzzle.ui.screens.StudioSplashScreen
 
 object Routes {
+    const val STUDIO_SPLASH = "studio_splash"
     const val SPLASH = "splash"
     const val HOME = "home"
     const val GAME = "game/{levelId}"
@@ -53,12 +55,22 @@ fun LoopLineNavGraph() {
 
     NavHost(
         navController = navController,
-        startDestination = Routes.SPLASH,
+        startDestination = Routes.STUDIO_SPLASH,
         enterTransition = { forwardEnter },
         exitTransition = { forwardExit },
         popEnterTransition = { backEnter },
         popExitTransition = { backExit }
     ) {
+        composable(Routes.STUDIO_SPLASH) {
+            StudioSplashScreen(
+                onFinished = {
+                    navController.navigate(Routes.SPLASH) {
+                        popUpTo(Routes.STUDIO_SPLASH) { inclusive = true }
+                    }
+                }
+            )
+        }
+
         composable(Routes.SPLASH) {
             SplashScreen(
                 onFinished = {

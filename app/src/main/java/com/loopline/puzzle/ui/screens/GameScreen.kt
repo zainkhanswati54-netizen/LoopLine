@@ -1,5 +1,6 @@
 package com.loopline.puzzle.ui.screens
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -87,6 +88,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.loopline.puzzle.ads.AdsManager
 import com.loopline.puzzle.game.Cell
 import com.loopline.puzzle.game.DAILY_CHALLENGE_LEVEL_ID
 import com.loopline.puzzle.game.DailyChallengeStore
@@ -138,10 +140,11 @@ private val MAX_CELL_SIZE = 58.dp
 private val MIN_CELL_SIZE = 32.dp
 private val CELL_GAP = 10.dp
 
-// Free for now since the person building this is wiring up monetization
-// separately. To gate extra hints behind a rewarded ad later, this is the
-// number to make ad-unlockable (e.g. grant +1 and re-check this constant
-// after a rewarded-ad callback succeeds).
+// Hints are scarce (1 per level) by design - see the README's "Hint
+// scarcity" note. They're no longer free: requestHint() below requires a
+// completed rewarded ad view (AdsManager) before it will actually solve
+// and reveal the next tile. This constant still caps how many *ad-gated*
+// hints a single level allows.
 private const val MAX_HINTS_PER_LEVEL = 1
 
 // How long the tile-shrink/pop-out + success sound beat plays before the
@@ -254,6 +257,13 @@ fun GameScreen(
     val soundPlayer = remember { SoundPlayer.create(context) }
     DisposableEffect(Unit) {
         onDispose { soundPlayer.release() }
+    }
+
+    // Warms up a rewarded ad the moment the player enters a level, so it's
+    // normally already loaded by the time they actually tap Hint instead of
+    // making them wait for one to fetch at that moment.
+    LaunchedEffect(Unit) {
+        AdsManager.preload(context)
     }
 
     // If GameSession/ModeSession reconstructed this exact level from a
@@ -397,6 +407,20 @@ fun GameScreen(
     var hintCell by remember(levelId) { mutableStateOf<Cell?>(null) }
     var isSolvingHint by remember(levelId) { mutableStateOf(false) }
     var hintsUsed by remember(levelId) { mutableStateOf(restored?.hintsUsed ?: 0) }
+    // True only while the rewarded ad itself is loading/showing - kept
+    // separate from isSolvingHint (the PathSolver step) so the button can
+    // show the right label for whichever wait is actually happening.
+    var isWaitingForAd by remember(levelId) { mutableStateOf(false) }
+    // Brief, self-clearing message for "no ad available right now" - not a
+    // dialog, since it shouldn't block play, just explain why nothing
+    // happened when the player tapped Hint.
+    var hintAdUnavailable by remember(levelId) { mutableStateOf(false) }
+    LaunchedEffect(hintAdUnavailable) {
+        if (hintAdUnavailable) {
+            delay(2500)
+            hintAdUnavailable = false
+        }
+    }
     val coroutineScope = rememberCoroutineScope()
 
     // Perfect-solve streak: loaded once (not per-levelId, so it survives
@@ -473,8 +497,7 @@ fun GameScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    fun requestHint() {
-        if (isComplete || isSolvingHint || hintsUsed >= MAX_HINTS_PER_LEVEL) return
+    fun solveAndRevealHint() {
         isSolvingHint = true
         val currentPath = path.toList()
         coroutineScope.launch {
@@ -492,6 +515,32 @@ fun GameScreen(
                 persistProgress()
             }
         }
+    }
+
+    fun requestHint() {
+        if (isComplete || isSolvingHint || isWaitingForAd || hintsUsed >= MAX_HINTS_PER_LEVEL) return
+
+        val activity = context as? Activity
+        if (activity == null) {
+            // Defensive only - LocalContext.current is always an Activity
+            // in this app's single-Activity setup, but never silently
+            // hand out a free hint if that assumption ever breaks.
+            hintAdUnavailable = true
+            return
+        }
+
+        isWaitingForAd = true
+        AdsManager.showForHint(
+            activity = activity,
+            onEarnedReward = {
+                isWaitingForAd = false
+                solveAndRevealHint()
+            },
+            onUnavailable = {
+                isWaitingForAd = false
+                hintAdUnavailable = true
+            }
+        )
     }
 
     LaunchedEffect(levelId) {
@@ -713,7 +762,7 @@ fun GameScreen(
                     color = TextSecondary
                 )
             }
-            if (isSolvingHint) {
+            if (isSolvingHint || isWaitingForAd) {
                 Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
@@ -1074,10 +1123,15 @@ fun GameScreen(
         ) {
             val hintsLeft = MAX_HINTS_PER_LEVEL - hintsUsed
             MetallicButton(
-                text = if (isSolvingHint) "Solving\u2026" else "Hint \u00b7 $hintsLeft left",
+                text = when {
+                    isWaitingForAd -> "Loading ad\u2026"
+                    isSolvingHint -> "Solving\u2026"
+                    hintsLeft > 0 -> "Watch ad for hint \u00b7 $hintsLeft left"
+                    else -> "No hints left"
+                },
                 onClick = { requestHint() },
                 accentKey = "gold",
-                enabled = !isComplete && !isSolvingHint && hintsLeft > 0,
+                enabled = !isComplete && !isSolvingHint && !isWaitingForAd && hintsLeft > 0,
                 textColor = Color(0xFFFDFDFD),
                 modifier = Modifier.weight(1f)
             )
@@ -1103,6 +1157,28 @@ fun GameScreen(
                 modifier = Modifier.weight(1f)
             )
         }
+        }
+
+        AnimatedVisibility(
+            visible = hintAdUnavailable,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 92.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(LoopLineShapes.card)
+                    .background(SurfaceCardElevated)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
+                Text(
+                    "No ad available right now \u2013 try again in a moment",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
         }
 
         AnimatedVisibility(

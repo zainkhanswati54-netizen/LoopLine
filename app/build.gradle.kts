@@ -67,6 +67,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
+    // Powers the twice-daily "come back and play" reminder notifications
+    // (self-rescheduling background work; see game/notifications/).
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    // Rewarded ads gating the Hint button (see ads/AdsManager.kt).
+    implementation("com.google.android.gms:play-services-ads:23.2.0")
+
     // Needed for the XML "Theme.Material3.DayNight.NoActionBar" base style used
     // in res/values/themes.xml (the pre-Compose window theme). Compose's own
     // material3 artifact only provides Kotlin APIs, not this XML style.

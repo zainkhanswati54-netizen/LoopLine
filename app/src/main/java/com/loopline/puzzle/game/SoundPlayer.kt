@@ -30,10 +30,31 @@ class SoundPlayer private constructor(
     private val wrongMoveSoundId: Int,
     private val resetSoundId: Int
 ) {
+    // Bug fix: SoundPool.load() is asynchronous - it returns a sound ID
+    // immediately, but the clip isn't actually decoded and ready until the
+    // pool's load-complete callback fires some milliseconds later. Calling
+    // play() on an ID that hasn't finished loading yet is a silent no-op
+    // (no crash, no sound, no error) - which made the very first tile
+    // connect of a freshly opened level frequently play no pop at all,
+    // since that tap could easily land before loading finished. Every
+    // play*() method below now checks this set first.
+    private val loadedSoundIds = mutableSetOf<Int>()
+
+    init {
+        pool.setOnLoadCompleteListener { _, sampleId, status ->
+            if (status == 0) loadedSoundIds += sampleId
+        }
+    }
+
+    private fun playIfLoaded(soundId: Int, volume: Float) {
+        if (soundId in loadedSoundIds) {
+            pool.play(soundId, volume, volume, 1, 0, 1f)
+        }
+    }
 
     /** Played when the stroke extends to a new tile. */
     fun playConnect(volume: Float = 1f) {
-        pool.play(connectSoundId, volume, volume, 1, 0, 1f)
+        playIfLoaded(connectSoundId, volume)
     }
 
     /** Played once, the instant a level's final tile connects - the
@@ -42,19 +63,19 @@ class SoundPlayer private constructor(
      * that file's contents (same filename) if a different clip is wanted
      * later; no code change needed. */
     fun playSuccess(volume: Float = 1f) {
-        pool.play(successSoundId, volume, volume, 1, 0, 1f)
+        playIfLoaded(successSoundId, volume)
     }
 
     /** Played the instant the player drags onto a non-adjacent/invalid
      * tile - paired with the red stroke flash and grid shake. */
     fun playWrongMove(volume: Float = 1f) {
-        pool.play(wrongMoveSoundId, volume, volume, 1, 0, 1f)
+        playIfLoaded(wrongMoveSoundId, volume)
     }
 
     /** Played when the Restart button is tapped - a distinct "tearing up
      * this attempt" cue rather than the generic UI button tap. */
     fun playReset(volume: Float = 1f) {
-        pool.play(resetSoundId, volume, volume, 1, 0, 1f)
+        playIfLoaded(resetSoundId, volume)
     }
 
     fun release() {

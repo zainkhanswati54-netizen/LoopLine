@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.AlertDialog
@@ -47,6 +48,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.loopline.puzzle.game.SettingsStore
+import com.loopline.puzzle.notifications.ReminderScheduler
+import com.loopline.puzzle.notifications.ReminderStore
 import com.loopline.puzzle.ui.components.IconChipButton
 import com.loopline.puzzle.ui.components.MetallicButton
 import com.loopline.puzzle.ui.theme.Copper
@@ -64,6 +67,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var soundEnabled by remember { mutableStateOf(SettingsStore.soundEnabled(context)) }
     var vibrationEnabled by remember { mutableStateOf(SettingsStore.vibrationEnabled(context)) }
+    var remindersEnabled by remember { mutableStateOf(ReminderStore.remindersEnabled(context)) }
     var showResetConfirm by remember { mutableStateOf(false) }
     var showResetDone by remember { mutableStateOf(false) }
     var showPrivacyPolicy by remember { mutableStateOf(false) }
@@ -106,7 +110,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 }
             )
             SettingToggleRow(
-                icon = Icons.Filled.NotificationsActive,
+                icon = Icons.Filled.Vibration,
                 accentColor = Copper,
                 title = "Vibration",
                 subtitle = "A short haptic tick on every tile you connect",
@@ -114,6 +118,22 @@ fun SettingsScreen(onBack: () -> Unit) {
                 onCheckedChange = {
                     vibrationEnabled = it
                     SettingsStore.setVibrationEnabled(context, it)
+                }
+            )
+            SettingToggleRow(
+                icon = Icons.Filled.NotificationsActive,
+                accentColor = Gold,
+                title = "Daily reminders",
+                subtitle = "A couple of nudges a day to keep your streak alive",
+                checked = remindersEnabled,
+                onCheckedChange = {
+                    remindersEnabled = it
+                    ReminderStore.setRemindersEnabled(context, it)
+                    if (it) {
+                        ReminderScheduler.scheduleIfEnabled(context)
+                    } else {
+                        ReminderScheduler.cancel(context)
+                    }
                 }
             )
 

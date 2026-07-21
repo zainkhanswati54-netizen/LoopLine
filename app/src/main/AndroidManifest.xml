@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Needed to actually show the twice-daily reminder notification on
+         Android 13+ (API 33); the app also asks for this at runtime the
+         first time Home is shown (see MainActivity / ReminderScheduler). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Required by the Google Mobile Ads SDK to fetch and show the
+         rewarded ad that now gates the Hint button (see ads/AdsManager.kt). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- Android 11+ (API 30) package visibility: without these, the
          "Rate LoopLine" (Play Store) and "Contact / Feedback" (email)
          rows in Settings can silently fail to find a matching app on some
@@ -20,6 +30,14 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.LoopLine">
+
+        <!-- Google's published TEST AdMob app ID - serves test ads only,
+             safe to build/run with right now. Swap for your real AdMob
+             App ID before a Play Store release (see ads/AdsManager.kt for
+             the matching ad-unit-ID note). -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
 
         <activity
             android:name=".MainActivity"
