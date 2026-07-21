@@ -142,7 +142,7 @@ private val CELL_GAP = 10.dp
 // separately. To gate extra hints behind a rewarded ad later, this is the
 // number to make ad-unlockable (e.g. grant +1 and re-check this constant
 // after a rewarded-ad callback succeeds).
-private const val MAX_HINTS_PER_LEVEL = 3
+private const val MAX_HINTS_PER_LEVEL = 1
 
 // How long the tile-shrink/pop-out + success sound beat plays before the
 // next level loads itself - the entire reward moment now, since there's

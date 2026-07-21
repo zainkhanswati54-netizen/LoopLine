@@ -122,4 +122,38 @@ enum class Difficulty(
         val plateauProgress = levelInPlateau / (curve.growthIntervalLevels - 1).coerceAtLeast(1).toFloat()
         return curve.highFillRatio - (curve.highFillRatio - curve.lowFillRatio) * plateauProgress
     }
+
+    companion object {
+        /**
+         * Classic mode is a single endless track (no up-front picker), but
+         * the puzzle's *shape* still steps through all three tiers as the
+         * player climbs: Easy for levels 1-40, Normal for 41-70, then Hard
+         * from 71 onward with no ceiling. [forLevel] is the one place that
+         * boundary lives, so every other call site (level generation, the
+         * in-game header label, best-level/leaderboard bookkeeping) derives
+         * the tier from the global level number instead of the player
+         * choosing it.
+         */
+        fun forLevel(levelNumber: Int): Difficulty = when {
+            levelNumber <= 40 -> EASY
+            levelNumber <= 70 -> NORMAL
+            else -> HARD
+        }
+
+        /** The first global level number at which [difficulty]'s tier begins. */
+        fun tierStart(difficulty: Difficulty): Int = when (difficulty) {
+            EASY -> 1
+            NORMAL -> 41
+            HARD -> 71
+        }
+    }
+
+    /**
+     * [levelNumber]'s position *within this tier* (1-based) - e.g. global
+     * level 45 is Normal's 5th level, since Normal starts at 41. Curves are
+     * authored in terms of "levels since this tier began", so generation
+     * and fill-ratio math both key off this rather than the raw global
+     * number once tiers stop starting at 1.
+     */
+    fun levelWithinTier(levelNumber: Int): Int = levelNumber - tierStart(this) + 1
 }

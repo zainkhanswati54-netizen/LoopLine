@@ -3,10 +3,15 @@ package com.loopline.puzzle.game
 import android.content.Context
 
 /**
- * Holds the state for "endless" play — one independent session **per
- * difficulty**, not a single global one — and keeps it mirrored to disk via
- * [ProgressStore] so it survives an actual app restart, not just in-app
- * navigation.
+ * Holds the state for Classic mode's "endless" play — **one single global
+ * track**, not one per difficulty. The puzzle's tier (Easy/Normal/Hard)
+ * is derived automatically from how far the player has climbed
+ * ([Difficulty.forLevel]: 1-40 Easy, 41-70 Normal, 71+ Hard, no ceiling) -
+ * there's no up-front picker and no separate progress per tier, just one
+ * level counter that keeps climbing.
+ *
+ * State is mirrored to disk via [ProgressStore] so it survives an actual
+ * app restart, not just in-app navigation.
  *
  * Bug this fixes: previously this was pure in-memory state. Force-closing
  * the app (or Android killing the process in the background) lost not just
@@ -23,8 +28,12 @@ object GameSession {
     private val cache = mutableMapOf<Int, Level>()
     private val accentCycle = listOf("gold", "copper", "rosegold")
 
+    /** Single fixed key - Classic mode is one track, so there's only ever
+     * one session to persist (unlike Zen/Timed's per-mode keys). */
+    private const val SESSION_KEY = "classic"
+
     private class Session(var levelNumber: Int, var currentLevel: Level)
-    private val sessions = mutableMapOf<Difficulty, Session>()
+    private var session: Session? = null
 
     private var hydrated = false
 
@@ -41,94 +50,83 @@ object GameSession {
         return progress?.takeIf { it.forLevelId == forLevelId }
     }
 
-    /** Whichever difficulty's puzzle is currently active/on screen. */
-    var difficulty: Difficulty = Difficulty.NORMAL
-        private set
+    /** The tier the *current* level belongs to, derived from [levelNumber]
+     * (falls back to Easy - level 1's tier - when there's no active
+     * session yet, since that's where a fresh session would start). */
+    val difficulty: Difficulty get() = Difficulty.forLevel(levelNumber.coerceAtLeast(1))
 
-    val levelNumber: Int get() = sessions[difficulty]?.levelNumber ?: 0
-    val currentLevel: Level? get() = sessions[difficulty]?.currentLevel
+    val levelNumber: Int get() = session?.levelNumber ?: 0
+    val currentLevel: Level? get() = session?.currentLevel
     val hasActiveSession: Boolean get() = currentLevel != null
 
     /**
-     * Loads any persisted in-progress sessions from disk into memory. Safe
+     * Loads any persisted in-progress session from disk into memory. Safe
      * to call repeatedly (e.g. from every screen that reads session state);
      * only does real work once per process. Called once, early, from
-     * MainActivity so `hasSession`/`levelNumberFor` are accurate the moment
-     * the Difficulty Select screen first reads them - without needing a
-     * Context threaded through every read.
+     * MainActivity so `hasActiveSession`/`levelNumber` are accurate the
+     * moment Home first reads them - without needing a Context threaded
+     * through every read.
      */
     fun hydrate(context: Context) {
         if (hydrated) return
         hydrated = true
-        for (target in Difficulty.entries) {
-            val saved = ProgressStore.loadSession(context, target) ?: continue
-            val level = Level(
-                id = nextId(),
-                title = "Level ${saved.levelNumber}",
-                rows = saved.rows,
-                cols = saved.cols,
-                cells = saved.cells,
-                start = saved.start,
-                accentKey = saved.accentKey
-            )
-            cache[level.id] = level
-            sessions[target] = Session(saved.levelNumber, level)
-        }
+        val saved = ProgressStore.loadSessionByKey(context, SESSION_KEY) ?: return
+        val level = Level(
+            id = nextId(),
+            title = "Level ${saved.levelNumber}",
+            rows = saved.rows,
+            cols = saved.cols,
+            cells = saved.cells,
+            start = saved.start,
+            accentKey = saved.accentKey
+        )
+        cache[level.id] = level
+        session = Session(saved.levelNumber, level)
     }
 
-    /** True if [target] has an in-progress session waiting to be resumed. */
-    fun hasSession(target: Difficulty): Boolean = sessions[target]?.currentLevel != null
-
-    /** The level number the player would resume at for [target] (0 = none yet). */
-    fun levelNumberFor(target: Difficulty): Int = sessions[target]?.levelNumber ?: 0
-
     /**
-     * Switches the active difficulty to [target]. Resumes its existing
-     * session if it has one (this is what makes switching difficulties
-     * safe, and - since [hydrate] already ran - what makes resuming after
-     * a full app restart work too); otherwise starts a fresh Level 1
-     * session, same as [restart].
+     * Resumes the in-progress session if there is one (this is what makes
+     * resuming after a full app restart work); otherwise starts a fresh
+     * Level 1 session, same as [restart].
      */
-    fun resume(context: Context, target: Difficulty): Level {
+    fun resume(context: Context): Level {
         hydrate(context)
-        difficulty = target
-        val session = sessions[target]
-        if (session != null) {
-            val saved = ProgressStore.loadSession(context, target)
+        val current = session
+        if (current != null) {
+            val saved = ProgressStore.loadSessionByKey(context, SESSION_KEY)
             if (saved != null) {
                 pendingRestoredProgress = RestoredProgress(
-                    forLevelId = session.currentLevel.id,
+                    forLevelId = current.currentLevel.id,
                     path = saved.path,
                     elapsedSeconds = saved.elapsedSeconds,
                     hintsUsed = saved.hintsUsed
                 )
             }
-            return session.currentLevel
+            return current.currentLevel
         }
-        return restart(context, target)
+        return restart(context)
     }
 
     /**
-     * Explicitly throws away any in-progress session on [target] and starts
-     * over at Level 1. This is a deliberate, separate action (a "restart"
-     * button the player has to confirm) rather than something that happens
-     * as a side effect of merely switching difficulties.
+     * Explicitly throws away any in-progress session and starts over at
+     * Level 1 (back to the Easy tier). This is a deliberate, separate
+     * action (a "restart" button the player has to confirm) rather than
+     * something that happens as a side effect of anything else.
      */
-    fun restart(context: Context, target: Difficulty): Level {
-        difficulty = target
-        val level = generateAndStore(target, 1)
-        sessions[target] = Session(1, level)
-        persistFreshLevel(context, target, 1, level)
+    fun restart(context: Context): Level {
+        val level = generateAndStore(1)
+        session = Session(1, level)
+        persistFreshLevel(context, 1, level)
         return level
     }
 
     fun next(context: Context): Level {
-        val session = sessions[difficulty] ?: return restart(context, difficulty)
-        val newLevelNumber = session.levelNumber + 1
-        val level = generateAndStore(difficulty, newLevelNumber)
-        session.levelNumber = newLevelNumber
-        session.currentLevel = level
-        persistFreshLevel(context, difficulty, newLevelNumber, level)
+        val current = session ?: return restart(context)
+        val newLevelNumber = current.levelNumber + 1
+        val level = generateAndStore(newLevelNumber)
+        current.levelNumber = newLevelNumber
+        current.currentLevel = level
+        persistFreshLevel(context, newLevelNumber, level)
         return level
     }
 
@@ -139,9 +137,9 @@ object GameSession {
      */
     fun saveProgress(context: Context, path: List<Cell>, elapsedSeconds: Int, hintsUsed: Int) {
         val level = currentLevel ?: return
-        ProgressStore.saveSession(
+        ProgressStore.saveSessionByKey(
             context,
-            difficulty,
+            SESSION_KEY,
             ProgressStore.SavedSession(
                 levelNumber = levelNumber,
                 rows = level.rows,
@@ -158,17 +156,17 @@ object GameSession {
 
     fun lookup(id: Int): Level? = cache[id]
 
-    /** Caches a level built outside the normal per-difficulty flow (the
+    /** Caches a level built outside the normal Classic-mode flow (the
      * Daily Challenge) under its own id so GameScreen can look it up the
      * same way as any endless-mode level. */
     fun cacheExternal(level: Level) {
         cache[level.id] = level
     }
 
-    private fun persistFreshLevel(context: Context, target: Difficulty, levelNumber: Int, level: Level) {
-        ProgressStore.saveSession(
+    private fun persistFreshLevel(context: Context, levelNumber: Int, level: Level) {
+        ProgressStore.saveSessionByKey(
             context,
-            target,
+            SESSION_KEY,
             ProgressStore.SavedSession(
                 levelNumber = levelNumber,
                 rows = level.rows,
@@ -188,10 +186,18 @@ object GameSession {
         return idCounter
     }
 
-    private fun generateAndStore(target: Difficulty, levelNumber: Int): Level {
+    /** [levelNumber] is the global Classic-track number; the tier (and the
+     * curve math inside [LevelGenerator.generate]) is derived from it via
+     * [Difficulty.forLevel], and the level passed to the generator is
+     * re-based to "levels since this tier began" via [Difficulty.levelWithinTier]
+     * so each tier's curve (authored assuming it starts at 1) still ramps
+     * the same way it did when tiers were separate picker tracks. */
+    private fun generateAndStore(levelNumber: Int): Level {
+        val tier = Difficulty.forLevel(levelNumber)
+        val levelInTier = tier.levelWithinTier(levelNumber)
         val accentKey = accentCycle[(levelNumber - 1).mod(accentCycle.size)]
-        val generated = LevelGenerator.generate(target, levelNumber, accentKey)
-        val stored = generated.copy(id = nextId())
+        val generated = LevelGenerator.generate(tier, levelInTier, accentKey)
+        val stored = generated.copy(id = nextId(), title = "Level $levelNumber")
         cache[stored.id] = stored
         return stored
     }

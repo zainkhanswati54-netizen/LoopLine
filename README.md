@@ -56,7 +56,36 @@ A single-stroke puzzle game — Kotlin + Jetpack Compose, Material 3.
 - Completing a level plays a quick confetti burst, then a dialog with a **star rating** (based on solve time relative to puzzle size), **Next level** (fresh puzzle, same difficulty, slightly bigger every 5 levels), or **Change difficulty**.
 - Play is endless — no fixed level count.
 
-## Recent fixes (this update, animation & engagement pass)
+## Recent fixes (this update, hint scarcity & single-track difficulty)
+
+- **Hints are scarce now: 1 per level, not 3** (`MAX_HINTS_PER_LEVEL` in
+  `GameScreen.kt`). Three felt generous enough that the Hint button barely
+  mattered; one makes each hint an actual decision.
+- **Classic is one continuous level track that steps through all three
+  tiers on its own, instead of Easy/Normal/Hard being three separate
+  tracks the player restarts from Level 1 on.** Levels 1-40 generate as
+  Easy, 41-70 as Normal, 71 and up as Hard with no ceiling
+  (`Difficulty.forLevel` in `Difficulty.kt` is the one place that boundary
+  lives). `GameSession` is now a single global session (one saved level
+  number, one saved stroke-in-progress) rather than a map of three - the
+  in-game header's difficulty label, hint/streak bookkeeping, and the
+  Leaderboard/Statistics screens' per-tier rows all still work exactly as
+  before because they already read the *current* tier off `GameSession`
+  rather than a player-chosen one; that tier now just changes
+  automatically as the level number crosses 40 and 70 instead of staying
+  fixed for the whole run. The now-unreachable Easy/Normal/Hard picker
+  (`DifficultySelectScreen.kt`, already dead code before this change - see
+  the previous update's note below about Home going straight into Level 1)
+  has been deleted rather than left to bit-rot next to a session model it
+  no longer matches.
+- Net effect on the Leaderboard: "Easy" freezes at "Reached Level 40" once
+  you climb past it, "Normal" shows wherever between 41-70 you're
+  currently strongest at, and "Hard" is the one that keeps climbing
+  forever - each row is still driven by the same per-tier
+  `ProgressStore.bestLevel`/`fastestSeconds` as before, just populated by
+  one climbing track instead of three chosen ones.
+
+## Recent fixes (previous update, animation & engagement pass)
 
 - **Every `MetallicButton` in the app now compresses on press** (a spring
   scale down to 0.94x, `MetallicButton.kt`) instead of relying on the

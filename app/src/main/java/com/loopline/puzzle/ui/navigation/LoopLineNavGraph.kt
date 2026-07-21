@@ -14,7 +14,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.loopline.puzzle.game.DAILY_CHALLENGE_LEVEL_ID
 import com.loopline.puzzle.game.DailyChallengeStore
-import com.loopline.puzzle.game.Difficulty
 import com.loopline.puzzle.game.GameSession
 import com.loopline.puzzle.game.ModeSession
 import com.loopline.puzzle.game.PlayMode
@@ -35,15 +34,6 @@ object Routes {
 
     fun game(levelId: Int) = "game/$levelId"
 }
-
-/**
- * Classic mode no longer asks Easy/Normal/Hard up front - tapping Play
- * jumps straight into Level 1 (or wherever that single track left off).
- * Difficulty still climbs automatically as the player advances, via
- * [Difficulty.NORMAL]'s existing scaledConfig/targetCellCount curve - the
- * old three-difficulty picker just isn't exposed as a menu step anymore.
- */
-private val CLASSIC_DIFFICULTY = Difficulty.NORMAL
 
 @Composable
 fun LoopLineNavGraph() {
@@ -85,8 +75,10 @@ fun LoopLineNavGraph() {
                     // Straight into the puzzle - no Easy/Normal/Hard picker.
                     // Resumes Classic's one in-progress session if there is
                     // one (including after a full app restart), otherwise
-                    // starts fresh at Level 1.
-                    val level = GameSession.resume(context, CLASSIC_DIFFICULTY)
+                    // starts fresh at Level 1. The tier (Easy/Normal/Hard)
+                    // is derived automatically from the level reached -
+                    // see Difficulty.forLevel - not chosen up front.
+                    val level = GameSession.resume(context)
                     navController.navigate(Routes.game(level.id))
                 },
                 onPlayDaily = {
