@@ -1330,7 +1330,12 @@ private fun CompletionCallout(
     }
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Column(
-            modifier = Modifier.scale(pop.value),
+            modifier = Modifier
+                .scale(pop.value)
+                .clip(LoopLineShapes.card)
+                .background(SurfaceCardElevated.copy(alpha = 0.92f))
+                .metallicBevel(cornerDp = LoopLineShapes.cardCornerDp, highlight = accent.copy(alpha = 0.6f))
+                .padding(horizontal = 24.dp, vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (showPerfect) {

@@ -156,6 +156,27 @@ object GameSession {
 
     fun lookup(id: Int): Level? = cache[id]
 
+    /**
+     * Clears all in-memory state (the cached session, the level cache, the
+     * hydration flag). Bug this fixes: this object is a process-lifetime
+     * singleton, so Settings' "Reset everything" - which only clears
+     * SharedPreferences - used to leave the *in-memory* session untouched.
+     * The player would tap Reset, then Play, and land right back on
+     * whatever level they were on before, because [hydrate] had already
+     * run once and [resume] just handed back the still-cached [Session]
+     * without ever consulting disk again. The reset only "worked" after a
+     * full app kill, which looked like the button did nothing. Called from
+     * [SettingsStore.resetAllProgress] right after it wipes the prefs, so
+     * the very next [resume] finds nothing cached and starts clean at
+     * Level 1.
+     */
+    fun resetInMemory() {
+        session = null
+        cache.clear()
+        hydrated = false
+        pendingRestoredProgress = null
+    }
+
     /** Caches a level built outside the normal Classic-mode flow (the
      * Daily Challenge) under its own id so GameScreen can look it up the
      * same way as any endless-mode level. */

@@ -119,6 +119,16 @@ object ModeSession {
 
     fun lookup(id: Int): Level? = cache[id]
 
+    /** See [GameSession.resetInMemory] - same bug, same fix, for Zen/Timed's
+     * sessions. */
+    fun resetInMemory() {
+        sessions.clear()
+        cache.clear()
+        modeForId.clear()
+        hydrated = false
+        pendingRestoredProgress = null
+    }
+
     private fun persistFreshLevel(context: Context, mode: PlayMode, levelNumber: Int, level: Level) {
         ProgressStore.saveSessionByKey(
             context,

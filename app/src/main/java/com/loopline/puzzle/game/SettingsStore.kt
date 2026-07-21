@@ -35,9 +35,19 @@ object SettingsStore {
 
     /** Wipes best levels, in-progress sessions, lifetime stats, and the
      * Daily Challenge streak. Does not touch [soundEnabled]/[vibrationEnabled]
-     * themselves - those are preferences, not progress. */
+     * themselves - those are preferences, not progress.
+     *
+     * Also clears [GameSession] and [ModeSession]'s in-memory state, not
+     * just the on-disk prefs - both are process-lifetime singletons that
+     * cache the current session in memory, so without this a reset only
+     * actually took effect after the player force-closed and relaunched
+     * the app; tapping Play right after "Reset everything" would silently
+     * hand back the still-cached old session instead of starting fresh.
+     */
     fun resetAllProgress(context: Context) {
         context.getSharedPreferences("loopline_progress", Context.MODE_PRIVATE).edit().clear().apply()
         context.getSharedPreferences("loopline_daily", Context.MODE_PRIVATE).edit().clear().apply()
+        GameSession.resetInMemory()
+        ModeSession.resetInMemory()
     }
 }
