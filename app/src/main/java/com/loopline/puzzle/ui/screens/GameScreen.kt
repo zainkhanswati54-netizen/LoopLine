@@ -428,7 +428,7 @@ fun GameScreen(
             hintCell = next
             hintsUsed += 1
             if (!isDailyChallenge) {
-                if (playMode == null) ProgressStore.recordHintUsed(context)
+                if (playMode == null) ProgressStore.recordHintUsed(context, GameSession.difficulty)
                 persistProgress()
             }
         }
@@ -454,8 +454,9 @@ fun GameScreen(
                 DailyChallengeStore.recordCompletion(context, completionSeconds)
             } else if (sessionLevel != null) {
                 ProgressStore.recordLevelReached(context, GameSession.difficulty, GameSession.levelNumber)
-                ProgressStore.recordLevelCompletion(context)
+                ProgressStore.recordLevelCompletion(context, GameSession.difficulty)
                 ProgressStore.recordSolveTime(context, GameSession.difficulty, completionSeconds)
+                ProgressStore.recordSolveDuration(context, GameSession.difficulty, completionSeconds)
             }
             if (SettingsStore.vibrationEnabled(context)) {
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -941,6 +942,7 @@ fun GameScreen(
                 onClick = { requestHint() },
                 accentKey = "gold",
                 enabled = !isComplete && !isSolvingHint && hintsLeft > 0,
+                textColor = Color(0xFFFDFDFD),
                 modifier = Modifier.weight(1f)
             )
             Spacer(modifier = Modifier.width(14.dp))
@@ -961,6 +963,7 @@ fun GameScreen(
                 // Restart plays its own distinct paper-rip cue above
                 // instead of the generic shared button tap.
                 playTapSound = false,
+                textColor = Color(0xFFFDFDFD),
                 modifier = Modifier.weight(1f)
             )
         }
@@ -1208,8 +1211,8 @@ private fun ConfettiBurst(modifier: Modifier = Modifier) {
  * the BackHandler in GameScreen only needs to handle the *unpaused* case.
  *
  * Redesigned as a full-screen overlay instead of a boxed AlertDialog: a
- * dark scrim over the whole screen (so the paused grid is still faintly
- * visible underneath, not hidden behind a small opaque card) with a
+ * fully opaque scrim over the whole screen (so the paused grid is
+ * completely hidden, not just dimmed behind a small card) with a
  * translucent, bevel-edged "glass" panel floating in the center, and both
  * actions rendered as real MetallicButtons in the gold/bronze accents
  * instead of one metallic button next to a plain text link - matching the
@@ -1235,8 +1238,13 @@ private fun PauseMenuDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f))
-                // Tapping anywhere on the dimmed scrim (outside the panel)
+                // Fully opaque - the paused grid underneath must not be
+                // readable at all, not just dimmed. Uses the app's own
+                // near-black background tone (not flat Color.Black) so it
+                // reads as "this screen" rather than a generic system
+                // scrim, while still completely hiding the grid.
+                .background(Color(0xFF0B0805))
+                // Tapping anywhere on the scrim (outside the panel)
                 // behaves like tapping outside an AlertDialog used to -
                 // it resumes play. No ripple, since this is a full-bleed
                 // scrim rather than a discrete tappable element.

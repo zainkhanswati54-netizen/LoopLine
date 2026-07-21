@@ -110,7 +110,10 @@ fun StatisticsScreen(onBack: () -> Unit) {
                 DifficultyStatRow(
                     difficulty = difficulty,
                     bestLevel = ProgressStore.bestLevel(context, difficulty),
-                    fastestSeconds = ProgressStore.fastestSeconds(context, difficulty)
+                    fastestSeconds = ProgressStore.fastestSeconds(context, difficulty),
+                    levelsCompleted = ProgressStore.levelsCompletedFor(context, difficulty),
+                    hintsUsed = ProgressStore.hintsUsedFor(context, difficulty),
+                    averageSeconds = ProgressStore.averageSolveSeconds(context, difficulty)
                 )
             }
         }
@@ -134,39 +137,68 @@ private fun StatTile(modifier: Modifier = Modifier, value: String, label: String
 }
 
 @Composable
-private fun DifficultyStatRow(difficulty: Difficulty, bestLevel: Int, fastestSeconds: Int?) {
+private fun DifficultyStatRow(
+    difficulty: Difficulty,
+    bestLevel: Int,
+    fastestSeconds: Int?,
+    levelsCompleted: Int,
+    hintsUsed: Int,
+    averageSeconds: Int?
+) {
     val accentKey = accentKeyFor(difficulty)
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(LoopLineShapes.card)
             .background(cardSurfaceBrush())
             .metallicBevel(cornerDp = LoopLineShapes.cardCornerDp)
-            .padding(18.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(18.dp)
     ) {
-        androidx.compose.foundation.layout.Box(
-            modifier = Modifier
-                .size(14.dp)
-                .clip(CircleShape)
-                .background(accentBrushFor(accentKey))
-        )
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(difficulty.label, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = if (bestLevel > 0) "Best: Level $bestLevel" else "Not played yet",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier
+                    .size(14.dp)
+                    .clip(CircleShape)
+                    .background(accentBrushFor(accentKey))
             )
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(difficulty.label, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = if (bestLevel > 0) "Best: Level $bestLevel" else "Not played yet",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+            if (fastestSeconds != null) {
+                Text(
+                    text = "${fastestSeconds}s best",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
+            }
         }
-        if (fastestSeconds != null) {
-            Text(
-                text = "${fastestSeconds}s best",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary
-            )
+
+        // Granular breakdown - only shown once there's at least one
+        // completed level at this difficulty, so a fresh install doesn't
+        // show a row of zeroes for every difficulty the player hasn't
+        // touched yet.
+        if (levelsCompleted > 0) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                MiniStat(label = "Completed", value = "$levelsCompleted")
+                MiniStat(label = "Hints used", value = "$hintsUsed")
+                MiniStat(label = "Avg time", value = averageSeconds?.let { "${it}s" } ?: "\u2014")
+            }
         }
+    }
+}
+
+@Composable
+private fun MiniStat(label: String, value: String) {
+    Column {
+        Text(text = value, style = MaterialTheme.typography.titleSmall, color = TextPrimary)
+        Text(text = label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
     }
 }

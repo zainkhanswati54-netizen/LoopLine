@@ -43,9 +43,26 @@ object ProgressStore {
         return prefs.getInt("total_levels_completed", 0)
     }
 
-    fun recordLevelCompletion(context: Context) {
+    /**
+     * [difficulty] is optional so callers outside a difficulty-scoped run
+     * (e.g. Daily Challenge, which doesn't use [Difficulty] at all) can
+     * still bump the lifetime total without it counting toward any single
+     * difficulty's per-difficulty breakdown below.
+     */
+    fun recordLevelCompletion(context: Context, difficulty: Difficulty? = null) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putInt("total_levels_completed", prefs.getInt("total_levels_completed", 0) + 1).apply()
+        val editor = prefs.edit()
+        editor.putInt("total_levels_completed", prefs.getInt("total_levels_completed", 0) + 1)
+        if (difficulty != null) {
+            val key = "levels_completed_${difficulty.name}"
+            editor.putInt(key, prefs.getInt(key, 0) + 1)
+        }
+        editor.apply()
+    }
+
+    fun levelsCompletedFor(context: Context, difficulty: Difficulty): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt("levels_completed_${difficulty.name}", 0)
     }
 
     fun totalHintsUsed(context: Context): Int {
@@ -53,9 +70,45 @@ object ProgressStore {
         return prefs.getInt("total_hints_used", 0)
     }
 
-    fun recordHintUsed(context: Context) {
+    fun recordHintUsed(context: Context, difficulty: Difficulty? = null) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putInt("total_hints_used", prefs.getInt("total_hints_used", 0) + 1).apply()
+        val editor = prefs.edit()
+        editor.putInt("total_hints_used", prefs.getInt("total_hints_used", 0) + 1)
+        if (difficulty != null) {
+            val key = "hints_used_${difficulty.name}"
+            editor.putInt(key, prefs.getInt(key, 0) + 1)
+        }
+        editor.apply()
+    }
+
+    fun hintsUsedFor(context: Context, difficulty: Difficulty): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt("hints_used_${difficulty.name}", 0)
+    }
+
+    // ---- Average solve time per difficulty ----
+    // Stored as a running (sum, count) pair rather than a list of every
+    // solve time - a full history would need unbounded storage and this
+    // app's SharedPreferences-based store isn't set up for that; sum/count
+    // is O(1) to update and gives an exact average.
+
+    fun recordSolveDuration(context: Context, difficulty: Difficulty, seconds: Int) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val sumKey = "solve_seconds_sum_${difficulty.name}"
+        val countKey = "solve_seconds_count_${difficulty.name}"
+        prefs.edit()
+            .putLong(sumKey, prefs.getLong(sumKey, 0L) + seconds)
+            .putInt(countKey, prefs.getInt(countKey, 0) + 1)
+            .apply()
+    }
+
+    /** Null until at least one level has been completed at this difficulty. */
+    fun averageSolveSeconds(context: Context, difficulty: Difficulty): Int? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val count = prefs.getInt("solve_seconds_count_${difficulty.name}", 0)
+        if (count <= 0) return null
+        val sum = prefs.getLong("solve_seconds_sum_${difficulty.name}", 0L)
+        return (sum / count).toInt()
     }
 
     // ---- Personal-best solve times (Leaderboard screen) ----

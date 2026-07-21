@@ -40,7 +40,14 @@ fun MetallicButton(
     modifier: Modifier = Modifier,
     accentKey: String = "gold",
     enabled: Boolean = true,
-    playTapSound: Boolean = true
+    playTapSound: Boolean = true,
+    // Default (TextOnMetal, a dark brown) reads fine against the paler
+    // highlight end of the gold/copper gradients, but on the darker
+    // Deep/Shadow stops - and especially at the smaller Hint/Restart size -
+    // it gets close to unreadable. Callers on darker or smaller buttons can
+    // pass an explicit lighter color instead of changing the shared default
+    // for every other metallic button in the app.
+    textColor: Color = TextOnMetal
 ) {
     val accentColor = accentColorFor(accentKey)
     val context = LocalContext.current
@@ -77,7 +84,7 @@ fun MetallicButton(
         Text(
             text = text,
             style = MaterialTheme.typography.titleMedium,
-            color = if (enabled) TextOnMetal else TextTertiary
+            color = if (enabled) textColor else TextTertiary
         )
     }
 }
