@@ -31,13 +31,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.LoopLine">
 
-        <!-- Google's published TEST AdMob app ID - serves test ads only,
-             safe to build/run with right now. Swap for your real AdMob
-             App ID before a Play Store release (see ads/AdsManager.kt for
-             the matching ad-unit-ID note). -->
+        <!-- Real Mentric Studios AdMob App ID (LoopLine). -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713" />
+            android:value="ca-app-pub-9019700052213764~7911035754" />
 
         <activity
             android:name=".MainActivity"

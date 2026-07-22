@@ -18,20 +18,14 @@ import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
  * retrying after a failed load all happen internally, so [GameScreen]'s
  * Hint button doesn't need to know anything about the ad SDK itself.
  *
- * *** BEFORE A REAL PLAY STORE RELEASE ***
- * [HINT_REWARDED_AD_UNIT_ID] below, and the `APPLICATION_ID` meta-data in
- * AndroidManifest.xml, are both Google's published *test* IDs. They always
- * serve a real, functional test ad on every device with zero AdMob account
- * setup, so hints are already properly ad-gated and testable right now -
- * but test ads earn no real revenue and Google's policies prohibit
- * shipping them to production. Create an AdMob account + app + rewarded ad
- * unit, then swap both IDs for your real ones before release:
- * https://support.google.com/admob/answer/3052638
+ * Uses the real AdMob Rewarded ad unit ("AdUnit_Rewarded 1") from the
+ * Mentric Studios account. The matching `APPLICATION_ID` meta-data lives
+ * in AndroidManifest.xml.
  */
 object AdsManager {
     private const val TAG = "AdsManager"
 
-    private const val HINT_REWARDED_AD_UNIT_ID = "ca-app-pub-3940256099942544/5224354917"
+    private const val HINT_REWARDED_AD_UNIT_ID = "ca-app-pub-9019700052213764/7719464065"
 
     private var initialized = false
     private var rewardedAd: RewardedAd? = null

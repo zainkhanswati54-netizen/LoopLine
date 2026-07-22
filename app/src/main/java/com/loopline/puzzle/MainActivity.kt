@@ -10,6 +10,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.loopline.puzzle.ads.AdsManager
+import com.loopline.puzzle.ads.InterstitialAdManager
+import com.loopline.puzzle.ads.RewardedInterstitialAdManager
 import com.loopline.puzzle.game.GameSession
 import com.loopline.puzzle.game.ModeSession
 import com.loopline.puzzle.notifications.ReminderScheduler
@@ -40,6 +42,10 @@ class MainActivity : ComponentActivity() {
         GameSession.hydrate(applicationContext)
         ModeSession.hydrate(applicationContext)
         AdsManager.initialize(applicationContext)
+        // Pre-load these too so the first level-complete / milestone moment
+        // already has an ad ready instead of showing nothing.
+        InterstitialAdManager.preload(applicationContext)
+        RewardedInterstitialAdManager.preload(applicationContext)
 
         setupDailyReminders()
 

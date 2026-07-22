@@ -89,6 +89,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.loopline.puzzle.ads.AdsManager
+import com.loopline.puzzle.ads.InterstitialAdManager
+import com.loopline.puzzle.ads.RewardedInterstitialAdManager
 import com.loopline.puzzle.game.Cell
 import com.loopline.puzzle.game.DAILY_CHALLENGE_LEVEL_ID
 import com.loopline.puzzle.game.DailyChallengeStore
@@ -415,6 +417,12 @@ fun GameScreen(
     // dialog, since it shouldn't block play, just explain why nothing
     // happened when the player tapped Hint.
     var hintAdUnavailable by remember(levelId) { mutableStateOf(false) }
+    // One extra hint beyond MAX_HINTS_PER_LEVEL, unlocked via a rewarded
+    // interstitial rather than the plain rewarded ad that gates the normal
+    // hint above - a bigger, less frequent ad for a bonus rather than the
+    // core action, and capped at one per level so it can't be farmed.
+    var bonusHintUsed by remember(levelId) { mutableStateOf(false) }
+    var isWaitingForBonusAd by remember(levelId) { mutableStateOf(false) }
     LaunchedEffect(hintAdUnavailable) {
         if (hintAdUnavailable) {
             delay(2500)
@@ -543,6 +551,31 @@ fun GameScreen(
         )
     }
 
+    fun requestBonusHint() {
+        if (isComplete || isSolvingHint || isWaitingForBonusAd || bonusHintUsed) return
+
+        val activity = context as? Activity
+        if (activity == null) {
+            hintAdUnavailable = true
+            return
+        }
+
+        isWaitingForBonusAd = true
+        coroutineScope.launch {
+            val result = RewardedInterstitialAdManager.show(activity)
+            isWaitingForBonusAd = false
+            when (result) {
+                RewardedInterstitialAdManager.Result.Rewarded -> {
+                    bonusHintUsed = true
+                    solveAndRevealHint()
+                }
+                RewardedInterstitialAdManager.Result.Failed -> {
+                    hintAdUnavailable = true
+                }
+            }
+        }
+    }
+
     LaunchedEffect(levelId) {
         while (true) {
             delay(1000)
@@ -596,6 +629,9 @@ fun GameScreen(
                 tileExitProgress.animateTo(1f, animationSpec = tween(durationMillis = 420, easing = LinearEasing))
             }
             delay(if (streakMilestoneText != null) SUCCESS_ANIMATION_MILLIS + 500L else SUCCESS_ANIMATION_MILLIS)
+            // Frequency-capped: only shows every few levels, and only if an ad
+            // already finished loading, so this never blocks or delays advancing.
+            (context as? Activity)?.let { InterstitialAdManager.maybeShowOnLevelComplete(it) }
             when {
                 isDailyChallenge -> onBack()
                 playMode != null -> onNavigateToLevel(ModeSession.next(context, playMode).id)
@@ -1122,16 +1158,19 @@ fun GameScreen(
                 .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 20.dp)
         ) {
             val hintsLeft = MAX_HINTS_PER_LEVEL - hintsUsed
+            val canBonusHint = hintsLeft <= 0 && !bonusHintUsed
             MetallicButton(
                 text = when {
-                    isWaitingForAd -> "Loading ad\u2026"
+                    isWaitingForAd || isWaitingForBonusAd -> "Loading ad\u2026"
                     isSolvingHint -> "Solving\u2026"
                     hintsLeft > 0 -> "Watch ad for hint \u00b7 $hintsLeft left"
+                    canBonusHint -> "Watch ad for bonus hint"
                     else -> "No hints left"
                 },
-                onClick = { requestHint() },
+                onClick = { if (hintsLeft > 0) requestHint() else requestBonusHint() },
                 accentKey = "gold",
-                enabled = !isComplete && !isSolvingHint && !isWaitingForAd && hintsLeft > 0,
+                enabled = !isComplete && !isSolvingHint && !isWaitingForAd && !isWaitingForBonusAd &&
+                    (hintsLeft > 0 || canBonusHint),
                 textColor = Color(0xFFFDFDFD),
                 modifier = Modifier.weight(1f)
             )

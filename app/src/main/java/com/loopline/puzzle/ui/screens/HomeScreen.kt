@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.loopline.puzzle.game.FeatureFlags
+import com.loopline.puzzle.ui.components.BannerAdView
 import com.loopline.puzzle.game.ProgressStore
 import com.loopline.puzzle.game.SettingsStore
 import com.loopline.puzzle.ui.components.DailyChallengeBanner
@@ -196,6 +197,7 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             LazyVerticalGrid(
+                modifier = Modifier.weight(1f),
                 columns = GridCells.Fixed(2),
                 contentPadding = PaddingValues(24.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -214,6 +216,8 @@ fun HomeScreen(
                     )
                 }
             }
+
+            BannerAdView(modifier = Modifier.padding(bottom = 8.dp))
         }
 
         if (showHowToPlay) {
