@@ -1,81 +1,161 @@
 package com.loopline.puzzle.ui.screens
 
-import androidx.compose.foundation.Image
+import android.content.Context
+import android.net.Uri
+import android.view.ViewGroup
+import android.widget.VideoView
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.viewinterop.AndroidView
 import com.loopline.puzzle.R
 import com.loopline.puzzle.ui.theme.backgroundBrush
 import kotlinx.coroutines.delay
 
 /**
  * Mentric Studios' brand bumper, shown once before [SplashScreen] on every
- * cold start. The source video (`Loading_Mentric_Studios.mp4`, a white-
- * background logo reveal) was pre-processed offline: the white background
- * was matted out to a real alpha channel (no white fringe on the gold
- * lettering) and every frame was exported into `res/drawable-nodpi` as
- * `company_loading_001.png` ... `company_loading_030.png`, 20 frames/sec so
- * the reveal keeps its original 1.5s timing.
+ * cold start. `res/raw/studio_intro.mp4` is the source
+ * `Loading_Mentric_Studios.mp4` clip re-rendered offline: its original
+ * white background was matted out and replaced with LoopLine's own
+ * [backgroundBrush] gradient (the same gold-on-near-black canvas the rest
+ * of the app uses), instead of the plain white it shipped with - so
+ * nothing needs to be composited at runtime, the clip already *is* the
+ * brand moment. The rest of this screen's own backdrop is that same
+ * gradient, so there's no color seam between the video and the loading
+ * screen that follows it - one continuous intro rather than two visually
+ * unrelated screens stitched together.
  *
- * Because the frames are already transparent, this screen just draws them
- * on top of the exact same [backgroundBrush] every other screen in the app
- * uses - so there's no color seam or flash between "Mentric Studios" and
- * the LoopLine splash that follows it, it reads as one continuous intro.
+ * The clip itself is ~1.5s, but a hard [MAX_WAIT_MS] safety timeout
+ * guarantees we always move on even if playback stalls or fails on a given
+ * device/codec - a studio bumper should never be able to soft-lock the app.
  */
-private const val FRAME_COUNT = 30
-private const val FRAME_INTERVAL_MS = 50L // 20fps, matches the source export
-private const val HOLD_ON_LAST_FRAME_MS = 450L // let the finished logo sit for a beat
+private const val MAX_WAIT_MS = 4000L
+private const val FADE_OUT_MS = 260
+private const val FADE_IN_MS = 420
 
-// Listed explicitly (not reflected by name) so a typo or a renamed/missing
-// drawable fails the build immediately instead of crashing at runtime.
-private val frameResIds: List<Int> = listOf(
-    R.drawable.company_loading_001, R.drawable.company_loading_002, R.drawable.company_loading_003,
-    R.drawable.company_loading_004, R.drawable.company_loading_005, R.drawable.company_loading_006,
-    R.drawable.company_loading_007, R.drawable.company_loading_008, R.drawable.company_loading_009,
-    R.drawable.company_loading_010, R.drawable.company_loading_011, R.drawable.company_loading_012,
-    R.drawable.company_loading_013, R.drawable.company_loading_014, R.drawable.company_loading_015,
-    R.drawable.company_loading_016, R.drawable.company_loading_017, R.drawable.company_loading_018,
-    R.drawable.company_loading_019, R.drawable.company_loading_020, R.drawable.company_loading_021,
-    R.drawable.company_loading_022, R.drawable.company_loading_023, R.drawable.company_loading_024,
-    R.drawable.company_loading_025, R.drawable.company_loading_026, R.drawable.company_loading_027,
-    R.drawable.company_loading_028, R.drawable.company_loading_029, R.drawable.company_loading_030,
-)
+/**
+ * Plain [VideoView] measures itself at the clip's *natural* pixel size and
+ * centers that inside its parent - on any screen whose aspect ratio doesn't
+ * exactly match the clip, that leaves plain backdrop-colored letterbox bars
+ * above/below (or left/right) of the video instead of the video covering
+ * the whole screen. This subclass forces a center-crop (like ImageView's
+ * `centerCrop` scaleType): it measures itself *larger* than the available
+ * space, scaled up just enough that one axis matches the clip's aspect
+ * ratio while covering the whole screen, and relies on the parent clipping
+ * the overflow (see [clipToBounds] on the AndroidView below) - so the video
+ * always fully fills the screen instead of showing bars around it.
+ */
+private class CenterCropVideoView(context: Context) : VideoView(context) {
+    private var srcWidth = 0
+    private var srcHeight = 0
+
+    fun setSourceSize(width: Int, height: Int) {
+        if (width <= 0 || height <= 0) return
+        srcWidth = width
+        srcHeight = height
+        requestLayout()
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val parentWidth = ViewGroup.getChildMeasureSpec(widthMeasureSpec, 0, ViewGroup.LayoutParams.MATCH_PARENT)
+        val parentHeight = ViewGroup.getChildMeasureSpec(heightMeasureSpec, 0, ViewGroup.LayoutParams.MATCH_PARENT)
+        if (srcWidth <= 0 || srcHeight <= 0) {
+            super.onMeasure(parentWidth, parentHeight)
+            return
+        }
+        val availableWidth = android.view.View.MeasureSpec.getSize(parentWidth)
+        val availableHeight = android.view.View.MeasureSpec.getSize(parentHeight)
+        val availableRatio = availableWidth.toFloat() / availableHeight
+        val sourceRatio = srcWidth.toFloat() / srcHeight
+
+        val (measuredWidth, measuredHeight) = if (sourceRatio > availableRatio) {
+            // Clip is relatively wider than the screen: match height, let width overflow.
+            (availableHeight * sourceRatio).toInt() to availableHeight
+        } else {
+            // Clip is relatively taller than the screen: match width, let height overflow.
+            availableWidth to (availableWidth / sourceRatio).toInt()
+        }
+        setMeasuredDimension(measuredWidth, measuredHeight)
+    }
+}
 
 @Composable
 fun StudioSplashScreen(onFinished: () -> Unit) {
-    var frameIndex by remember { mutableIntStateOf(0) }
-    val latestOnFinished by rememberUpdatedState(onFinished)
+    val latestOnFinished = rememberUpdatedState(onFinished)
+    var visible by remember { mutableStateOf(false) }
+    var finished by remember { mutableStateOf(false) }
+
+    // Fade IN on entry (instead of an instant hard cut to the first video
+    // frame), then fade out before handing off at the end - reads as one
+    // continuous, deliberately animated brand moment bookended on both
+    // sides instead of a video that just abruptly appears and swaps away.
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(if (visible) FADE_IN_MS else FADE_OUT_MS),
+        label = "studioSplashFade"
+    )
 
     LaunchedEffect(Unit) {
-        for (i in 0 until FRAME_COUNT) {
-            frameIndex = i
-            delay(FRAME_INTERVAL_MS)
+        visible = true
+    }
+
+    fun finishOnce() {
+        if (!finished) {
+            finished = true
+            visible = false
         }
-        delay(HOLD_ON_LAST_FRAME_MS)
-        latestOnFinished()
+    }
+
+    // Once the fade-out finishes, actually navigate. Keyed on `finished` (real
+    // Compose state) so this reliably re-runs the moment finishOnce() is called.
+    LaunchedEffect(finished) {
+        if (finished) {
+            delay(FADE_OUT_MS.toLong())
+            latestOnFinished.value()
+        }
+    }
+
+    // Safety net: never let a stalled/broken video keep the player stuck here.
+    LaunchedEffect(Unit) {
+        delay(MAX_WAIT_MS)
+        finishOnce()
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundBrush()),
-        contentAlignment = Alignment.Center
+            .background(backgroundBrush())
+            .alpha(alpha)
     ) {
-        Image(
-            painter = painterResource(id = frameResIds[frameIndex]),
-            contentDescription = null,
-            modifier = Modifier.fillMaxWidth()
+        AndroidView(
+            modifier = Modifier
+                .fillMaxSize()
+                .clipToBounds(),
+            factory = { ctx ->
+                CenterCropVideoView(ctx).apply {
+                    val uri = Uri.parse("android.resource://${ctx.packageName}/${R.raw.studio_intro}")
+                    setVideoURI(uri)
+                    setOnCompletionListener { finishOnce() }
+                    setOnErrorListener { _, _, _ -> finishOnce(); true }
+                    setOnPreparedListener { player ->
+                        player.isLooping = false
+                        setSourceSize(player.videoWidth, player.videoHeight)
+                    }
+                    start()
+                }
+            }
         )
     }
 }
